@@ -1,0 +1,5 @@
+# This directory holds TLS certificates
+# See TLS_SETUP.md for instructions
+
+# DO NOT commit actual certificate files!
+# fullchain.pem and privkey.pem should be in .gitignore

@@ -1,28 +1,34 @@
 # WeSense Platform - Docker Compose Configuration
-# See ARCHITECTURE.md for full details, ROADMAP.md for the evolution plan
+# See Deployment_Personas.md for full details
 #
 # Personas (set COMPOSE_PROFILES in .env):
-#   hub        - MQTT broker only (production mqtt.wesense.earth)
-#   ingester   - Ingesters + ClickHouse (connects to remote EMQX)
-#   standalone - Complete local stack (EMQX + ClickHouse + Ingesters + Respiro)
-#   full       - Everything including future Web UI, PostgreSQL
+#   contributor - Ingesters only (sends to remote MQTT hub)
+#   station     - Full local stack (EMQX + ClickHouse + Ingesters + Respiro)
+#   hub         - MQTT broker only (production mqtt.wesense.earth)
+#   observer    - Map + ClickHouse (future, needs P2P)
+#   researcher  - ClickHouse + IPFS (future)
+#   guardian    - IPFS pinning (future)
 #
-# Setup:
+# Quick start:
 #   1. Copy .env.sample to .env
 #   2. Edit .env with your values
-#   3. Run: docker compose up -d
+#   3. Run: docker compose --profile station up -d
 #   4. Access dashboard at http://localhost:18083 (admin/public)
 #   5. Access Respiro map at http://localhost:3000
+#
+# Building locally (instead of pulling images):
+#   docker compose --profile station build
+#   docker compose --profile station up -d
 
 services:
   # ===========================================================================
   # EMQX - MQTT Broker
-  # Profiles: hub, standalone, full
+  # Profiles: hub, station
   # ===========================================================================
   emqx:
     image: emqx/emqx:5
     container_name: wesense-emqx
-    profiles: ["hub", "standalone", "full"]
+    profiles: ["hub", "station"]
     ports:
       - "${PORT_MQTT_PLAIN:-1883}:1883"
       - "${PORT_MQTT_TLS:-8883}:8883"
@@ -54,12 +60,13 @@ services:
 
   # ===========================================================================
   # ClickHouse - Time Series Database
-  # Profiles: ingester, standalone, full
+  # Profiles: station, observer
+  # Creates both 'wesense' and 'wesense_respiro' databases on first start
   # ===========================================================================
   clickhouse:
     image: clickhouse/clickhouse-server:24
     container_name: wesense-clickhouse
-    profiles: ["ingester", "standalone", "full"]
+    profiles: ["station", "observer"]
     ports:
       - "${PORT_CLICKHOUSE_HTTP:-8123}:8123"
       - "${PORT_CLICKHOUSE_NATIVE:-9000}:9000"
@@ -87,37 +94,135 @@ services:
       - wesense-net
 
   # ===========================================================================
-  # Meshtastic Ingester
-  # Profiles: ingester, standalone, full
+  # Meshtastic Ingester (Unified: public + community)
+  # Profiles: contributor, station
   # Subscribes to mqtt.meshtastic.org, decodes protobuf, writes to ClickHouse
+  # Set MESHTASTIC_MODE=community for private community server
+  # Note: depends_on removed so contributor profile works without ClickHouse.
+  # The ingester handles missing ClickHouse gracefully (MQTT-only mode).
   # ===========================================================================
   ingester-meshtastic:
     image: ${INGESTER_MESHTASTIC_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-meshtastic:latest}
+    build:
+      context: ..
+      dockerfile: wesense-ingester-meshtastic/Dockerfile
     container_name: wesense-ingester-meshtastic
-    profiles: ["ingester", "standalone", "full"]
+    profiles: ["contributor", "station"]
     volumes:
       - ./ingester-meshtastic/cache:/app/cache
       - ./ingester-meshtastic/config:/app/config:ro
       - ./ingester-meshtastic/logs:/app/logs
     environment:
-      # ClickHouse connection
+      # Mode: 'public' (default) or 'community'
+      - MESHTASTIC_MODE=${MESHTASTIC_MODE:-public}
+      # ClickHouse connection (optional, gracefully handles unavailable)
       - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-clickhouse}
       - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
       - CLICKHOUSE_DATABASE=${CLICKHOUSE_DB:-wesense}
       - CLICKHOUSE_BATCH_SIZE=${CLICKHOUSE_BATCH_SIZE:-100}
       - CLICKHOUSE_FLUSH_INTERVAL=${CLICKHOUSE_FLUSH_INTERVAL:-10}
-      # Local MQTT for publishing decoded messages
-      - LOCAL_MQTT_HOST=${LOCAL_MQTT_HOST:-emqx}
-      - LOCAL_MQTT_PORT=${LOCAL_MQTT_PORT:-1883}
-      - LOCAL_MQTT_USER=${LOCAL_MQTT_USER:-}
-      - LOCAL_MQTT_PASSWORD=${LOCAL_MQTT_PASSWORD:-}
+      # MQTT output for publishing decoded messages
+      - WESENSE_OUTPUT_BROKER=${LOCAL_MQTT_HOST:-emqx}
+      - WESENSE_OUTPUT_PORT=${LOCAL_MQTT_PORT:-1883}
+      - WESENSE_OUTPUT_USERNAME=${LOCAL_MQTT_USER:-}
+      - WESENSE_OUTPUT_PASSWORD=${LOCAL_MQTT_PASSWORD:-}
       # Logging
       - DEBUG=${DEBUG:-false}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - TZ=${TZ:-Pacific/Auckland}
-    depends_on:
-      clickhouse:
-        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - wesense-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ===========================================================================
+  # WeSense Ingester (Unified: WiFi + LoRa + TTN webhook)
+  # Profiles: contributor, station
+  # Subscribes to wesense/v2/wifi/# and wesense/v2/lora/# topics
+  # Optionally runs TTN webhook HTTP server (TTN_WEBHOOK_ENABLED=true)
+  # ===========================================================================
+  ingester-wesense:
+    image: ${INGESTER_WESENSE_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-wesense:latest}
+    build:
+      context: ..
+      dockerfile: wesense-ingester-wesense/Dockerfile
+    container_name: wesense-ingester-wesense
+    profiles: ["contributor", "station"]
+    volumes:
+      - ingester-wesense-cache:/app/cache
+      - ingester-wesense-logs:/app/logs
+    environment:
+      # MQTT input (subscribe to sensor topics)
+      - MQTT_BROKER=${LOCAL_MQTT_HOST:-emqx}
+      - MQTT_PORT=${LOCAL_MQTT_PORT:-1883}
+      - MQTT_USERNAME=${LOCAL_MQTT_USER:-}
+      - MQTT_PASSWORD=${LOCAL_MQTT_PASSWORD:-}
+      # ClickHouse connection (optional, gracefully handles unavailable)
+      - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-clickhouse}
+      - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
+      - CLICKHOUSE_DATABASE=${CLICKHOUSE_DB:-wesense}
+      - CLICKHOUSE_BATCH_SIZE=${CLICKHOUSE_BATCH_SIZE:-100}
+      - CLICKHOUSE_FLUSH_INTERVAL=${CLICKHOUSE_FLUSH_INTERVAL:-10}
+      # MQTT output for decoded messages
+      - WESENSE_OUTPUT_BROKER=${LOCAL_MQTT_HOST:-emqx}
+      - WESENSE_OUTPUT_PORT=${LOCAL_MQTT_PORT:-1883}
+      - WESENSE_OUTPUT_USERNAME=${LOCAL_MQTT_USER:-}
+      - WESENSE_OUTPUT_PASSWORD=${LOCAL_MQTT_PASSWORD:-}
+      # TTN webhook (optional)
+      - TTN_WEBHOOK_ENABLED=${TTN_WEBHOOK_ENABLED:-false}
+      - TTN_WEBHOOK_PORT=${TTN_WEBHOOK_PORT:-5000}
+      # Logging
+      - DEBUG=${DEBUG:-false}
+      - TZ=${TZ:-Pacific/Auckland}
+    ports:
+      - "${PORT_TTN_WEBHOOK:-5000}:5000"
+    restart: unless-stopped
+    networks:
+      - wesense-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ===========================================================================
+  # Home Assistant Ingester
+  # Profiles: contributor, station
+  # Pulls sensor data from Home Assistant (WebSocket/REST)
+  # Critical: loop prevention filters exclude WeSense ESP32 devices
+  # ===========================================================================
+  ingester-homeassistant:
+    image: ${INGESTER_HA_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-homeassistant:latest}
+    build:
+      context: ..
+      dockerfile: wesense-ingester-homeassistant/Dockerfile
+    container_name: wesense-ingester-homeassistant
+    profiles: ["contributor", "station"]
+    volumes:
+      - ./ingester-homeassistant/config:/app/config:ro
+      - ingester-ha-logs:/app/logs
+    environment:
+      # Home Assistant connection
+      - HA_URL=${HA_URL:-http://homeassistant.local:8123}
+      - HA_ACCESS_TOKEN=${HA_ACCESS_TOKEN:-}
+      - NODE_NAME=${HA_NODE_NAME:-}
+      # ClickHouse connection (optional, gracefully handles unavailable)
+      - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-clickhouse}
+      - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
+      - CLICKHOUSE_DATABASE=${CLICKHOUSE_DB:-wesense}
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-default}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-}
+      # MQTT output for decoded messages
+      - LOCAL_MQTT_BROKER=${LOCAL_MQTT_HOST:-emqx}
+      - LOCAL_MQTT_PORT=${LOCAL_MQTT_PORT:-1883}
+      # Options
+      - DISABLE_CLICKHOUSE=${DISABLE_CLICKHOUSE:-false}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - TZ=${TZ:-Pacific/Auckland}
     restart: unless-stopped
     networks:
       - wesense-net
@@ -129,13 +234,13 @@ services:
 
   # ===========================================================================
   # Respiro - Environmental Sensor Map
-  # Profiles: standalone, full
+  # Profiles: station, observer
   # Web dashboard displaying sensor data from ClickHouse
   # ===========================================================================
   respiro:
     image: ${RESPIRO_IMAGE:-ghcr.io/wesense-earth/wesense-respiro:latest}
     container_name: wesense-respiro
-    profiles: ["standalone", "full"]
+    profiles: ["station", "observer"]
     ports:
       - "${PORT_RESPIRO:-3000}:3000"
     volumes:
@@ -168,59 +273,12 @@ services:
       - wesense-net
 
   # ===========================================================================
-  # PostgreSQL - User Management (Phase 3)
-  # Profiles: hub, full
-  # ===========================================================================
-  # postgres:
-  #   image: postgres:16-alpine
-  #   container_name: wesense-postgres
-  #   profiles: ["hub", "full"]
-  #   volumes:
-  #     - postgres-data:/var/lib/postgresql/data
-  #     - ./database/init:/docker-entrypoint-initdb.d:ro
-  #   environment:
-  #     - POSTGRES_DB=${POSTGRES_DB:-wesense}
-  #     - POSTGRES_USER=${POSTGRES_USER:-wesense}
-  #     - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
-  #     - TZ=${TZ:-Pacific/Auckland}
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-wesense}"]
-  #     interval: 30s
-  #     timeout: 10s
-  #     retries: 3
-  #   restart: unless-stopped
-  #   networks:
-  #     - wesense-net
-
-  # ===========================================================================
-  # Web UI - User Preferences (Phase 3)
-  # Profiles: hub, full
-  # ===========================================================================
-  # web-ui:
-  #   image: ${WEB_UI_IMAGE:-wesense-web-ui:latest}
-  #   container_name: wesense-web-ui
-  #   profiles: ["hub", "full"]
-  #   ports:
-  #     - "${PORT_WEB_UI:-3001}:3000"
-  #   environment:
-  #     - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-  #     - EMQX_API_URL=http://emqx:18083/api/v5
-  #     - TZ=${TZ:-Pacific/Auckland}
-  #   depends_on:
-  #     - postgres
-  #     - emqx
-  #   restart: unless-stopped
-  #   networks:
-  #     - wesense-net
-
-  # ===========================================================================
-  # IPFS - Distributed Storage (Phase 4)
-  # Profiles: full
+  # IPFS - Distributed Storage (future: guardian, researcher profiles)
   # ===========================================================================
   # ipfs:
   #   image: ipfs/kubo:v0.32
   #   container_name: wesense-ipfs
-  #   profiles: ["full"]
+  #   profiles: ["guardian", "researcher"]
   #   ports:
   #     - "${PORT_IPFS_SWARM:-4001}:4001"       # Swarm
   #     - "${PORT_IPFS_API:-5001}:5001"         # API
@@ -233,14 +291,6 @@ services:
   #   networks:
   #     - wesense-net
 
-  # ===========================================================================
-  # OrbitDB - Distributed Database (Phase 4)
-  # Profiles: full
-  # Note: OrbitDB typically runs as a library within Node.js apps rather than
-  # a standalone container. This may be integrated into web-ui or a dedicated
-  # service depending on architecture decisions.
-  # ===========================================================================
-
 # =============================================================================
 # Volumes
 # =============================================================================
@@ -249,7 +299,9 @@ volumes:
   emqx-log:
   clickhouse-data:
   clickhouse-logs:
-  # postgres-data:
+  ingester-wesense-cache:
+  ingester-wesense-logs:
+  ingester-ha-logs:
   # ipfs-data:
 
 # =============================================================================
@@ -259,5 +311,6 @@ networks:
   wesense-net:
     driver: bridge
   # For connecting to external networks (e.g., SWAG reverse proxy)
-  proxy-net:
-    external: true
+  # Uncomment if you have a proxy-net network (e.g., from SWAG/Nginx Proxy Manager)
+  # proxy-net:
+  #   external: true

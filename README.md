@@ -10,9 +10,9 @@ This is a **deployment repository**, not application code. It orchestrates upstr
 |---------|-------|------|
 | EMQX | `emqx/emqx:5` | Upstream |
 | ClickHouse | `clickhouse/clickhouse-server:24` | Upstream |
-| PostgreSQL | `postgres:16-alpine` | Upstream |
-| IPFS | `ipfs/kubo:v0.32` | Upstream (Phase 4) |
 | Ingester Meshtastic | `ghcr.io/wesense-earth/wesense-ingester-meshtastic` | WeSense |
+| Ingester WeSense | `ghcr.io/wesense-earth/wesense-ingester-wesense` | WeSense |
+| Ingester Home Assistant | `ghcr.io/wesense-earth/wesense-ingester-homeassistant` | WeSense |
 | Respiro | `ghcr.io/wesense-earth/wesense-respiro` | WeSense |
 
 ## Quick Start
@@ -23,7 +23,7 @@ cp .env.sample .env
 # Edit .env with your settings
 
 # 2. Start services
-docker compose --profile standalone up -d
+docker compose --profile station up -d
 
 # 3. Access services
 # EMQX Dashboard: http://localhost:18083 (admin/public)
@@ -31,23 +31,23 @@ docker compose --profile standalone up -d
 # ClickHouse: http://localhost:8123
 ```
 
-## Deployment Profiles
+## Deployment Personas
 
-Set `COMPOSE_PROFILES` in `.env`:
+Set `COMPOSE_PROFILES` in `.env` or use `--profile` directly. See [Deployment_Personas.md](../wesense-general-docs/general/Deployment_Personas.md) for full details.
 
 | Profile | Services | Use Case |
 |---------|----------|----------|
-| `hub` | EMQX, PostgreSQL | Production MQTT broker |
-| `ingester` | ClickHouse, Ingesters | Data processing node |
-| `standalone` | EMQX, ClickHouse, Ingesters, Respiro | Complete local stack |
-| `full` | Everything | Development/testing |
+| `contributor` | Ingesters | Contribute sensor data to remote hub |
+| `station` | EMQX, ClickHouse, Ingesters, Respiro | Full local stack |
+| `hub` | EMQX | Production MQTT broker |
+| `observer` | ClickHouse, Respiro | Map + live data (future, needs P2P) |
 
 ## Unraid Compatibility
 
 Unraid doesn't support docker-compose. Generate equivalent `docker run` commands:
 
 ```bash
-./scripts/docker-run.sh standalone > run-all.sh
+./scripts/docker-run.sh station > run-all.sh
 chmod +x run-all.sh
 ./run-all.sh
 ```
@@ -68,9 +68,9 @@ wesense-deploy/
 ├── .env.sample                 # Configuration template
 ├── emqx/etc/emqx.conf          # EMQX broker configuration
 ├── clickhouse/init/            # ClickHouse schema init scripts
-├── database/init/              # PostgreSQL schema init scripts
 ├── certs/                      # TLS certificates (gitignored)
-├── ingester-meshtastic/        # Volume mounts (cache, logs)
+├── ingester-meshtastic/        # Volume mounts (cache, config, logs)
+├── ingester-homeassistant/     # Volume mounts (config)
 └── respiro/                    # Volume mounts (data)
 ```
 
@@ -97,7 +97,7 @@ See `.env.sample` for all available options including:
 1. **Change the EMQX Erlang cookie** in `emqx/etc/emqx.conf` before deploying
 2. **Change the dashboard password** on first login (default: admin/public)
 3. **Enable TLS** for production (`TLS_MQTT_ENABLED=true`)
-4. **Set strong passwords** for PostgreSQL and ClickHouse
+4. **Set a strong password** for ClickHouse
 
 ## Version Pinning
 

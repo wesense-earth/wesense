@@ -96,8 +96,8 @@ services:
   # ===========================================================================
   # Meshtastic Ingester (Unified: public + community)
   # Profiles: contributor, station
-  # Subscribes to mqtt.meshtastic.org, decodes protobuf, writes to ClickHouse
-  # Set MESHTASTIC_MODE=community for private community server
+  # Community mode (default): receives from a local Meshtastic node via EMQX
+  # Public mode: subscribes to mqtt.meshtastic.org (hub operators only)
   # Note: depends_on removed so contributor profile works without ClickHouse.
   # The ingester handles missing ClickHouse gracefully (MQTT-only mode).
   # ===========================================================================
@@ -113,8 +113,13 @@ services:
       - ./ingester-meshtastic/config:/app/config:ro
       - ./ingester-meshtastic/logs:/app/logs
     environment:
-      # Mode: 'public' (default) or 'community'
-      - MESHTASTIC_MODE=${MESHTASTIC_MODE:-public}
+      # Mode: 'community' (local node, default) or 'public' (mqtt.meshtastic.org, hub operators only)
+      - MESHTASTIC_MODE=${MESHTASTIC_MODE:-community}
+      # MQTT input (community mode: local EMQX where Meshtastic node pushes)
+      - MQTT_BROKER=${LOCAL_MQTT_HOST:-emqx}
+      - MQTT_PORT=${LOCAL_MQTT_PORT:-1883}
+      - MQTT_USERNAME=${LOCAL_MQTT_USER:-}
+      - MQTT_PASSWORD=${LOCAL_MQTT_PASSWORD:-}
       # ClickHouse connection (optional, gracefully handles unavailable)
       - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-clickhouse}
       - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}

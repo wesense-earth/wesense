@@ -13,8 +13,7 @@
 #   1. Copy .env.sample to .env
 #   2. Edit .env with your values
 #   3. Run: docker compose --profile station up -d
-#   4. Access dashboard at http://localhost:18083 (admin/public)
-#   5. Access Respiro map at http://localhost:3000
+#   4. Access Respiro map at http://localhost:3000
 #
 # Building locally (instead of pulling images):
 #   docker compose --profile station build
@@ -22,25 +21,67 @@
 
 services:
   # ===========================================================================
+  # Config Validator — fails fast if passwords are still set to CHANGEME
+  # All services depend on this so nothing starts with default passwords.
+  # ===========================================================================
+  config-check:
+    image: busybox:latest
+    container_name: wesense-config-check
+    profiles: ["hub", "station", "contributor", "observer"]
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        fail=0
+        for var in CLICKHOUSE_PASSWORD MQTT_PASSWORD; do
+          eval val=\$$var
+          if [ "$$val" = "CHANGEME" ] || [ -z "$$val" ]; then
+            echo "ERROR: $$var is not set — change it in .env" >&2
+            fail=1
+          fi
+        done
+        if [ "$$fail" = "1" ]; then
+          echo "" >&2
+          echo "Set real passwords in .env before starting." >&2
+          exit 1
+        fi
+        echo "Config OK — all passwords set."
+    environment:
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+      - MQTT_PASSWORD=${MQTT_PASSWORD}
+    networks: []
+    restart: "no"
+
+  # ===========================================================================
   # EMQX - MQTT Broker
   # Profiles: hub, station
+  #
+  # Ports exposed to host are configured in .env — see "Host Port Mapping".
+  # To expose additional ports (dashboard, WebSocket, TLS), add them in a
+  # docker-compose.override.yml or uncomment below.
   # ===========================================================================
   emqx:
     image: emqx/emqx:5
     container_name: wesense-emqx
     profiles: ["hub", "station"]
+    depends_on:
+      config-check:
+        condition: service_completed_successfully
     ports:
-      - "${PORT_MQTT_PLAIN:-1883}:1883"
-      - "${PORT_MQTT_TLS:-8883}:8883"
-      - "${PORT_WS_PLAIN:-8083}:8083"
-      - "${PORT_WS_TLS:-8084}:8084"
-      - "${PORT_DASHBOARD:-18083}:18083"
+      # MQTT — sensors and devices connect here
+      - "${PORT_MQTT:-1883}:1883"
+      # Uncomment to expose additional ports to the host:
+      # - "${PORT_MQTT_TLS:-8883}:8883"    # MQTTS (TLS-encrypted MQTT)
+      # - "${PORT_WS:-8083}:8083"           # WebSocket (browser-based MQTT clients)
+      # - "${PORT_WS_TLS:-8084}:8084"       # WSS (TLS-encrypted WebSocket)
+      # - "${PORT_DASHBOARD:-18083}:18083"   # EMQX admin dashboard
     volumes:
       - emqx-data:/opt/emqx/data
       - emqx-log:/opt/emqx/log
       - ./certs:/opt/emqx/etc/certs:ro
       - ./emqx/etc/emqx.conf:/opt/emqx/etc/emqx.conf:ro
     environment:
+      # TLS listeners (disabled by default, enable in .env with certificates)
       - EMQX_LISTENERS__SSL__DEFAULT__ENABLED=${TLS_MQTT_ENABLED:-false}
       - EMQX_LISTENERS__SSL__DEFAULT__SSL_OPTIONS__CERTFILE=${TLS_CERTFILE:-/opt/emqx/etc/certs/fullchain.pem}
       - EMQX_LISTENERS__SSL__DEFAULT__SSL_OPTIONS__KEYFILE=${TLS_KEYFILE:-/opt/emqx/etc/certs/privkey.pem}
@@ -61,15 +102,21 @@ services:
   # ===========================================================================
   # ClickHouse - Time Series Database
   # Profiles: station, observer
-  # Creates both 'wesense' and 'wesense_respiro' databases on first start
+  # Creates both 'wesense' and 'wesense_respiro' databases on first start.
+  # No ports exposed by default — services connect via Docker network.
+  # To access ClickHouse from outside Docker (e.g., DBeaver, clickhouse-client),
+  # uncomment the ports below or add them in docker-compose.override.yml.
   # ===========================================================================
   clickhouse:
     image: clickhouse/clickhouse-server:24
     container_name: wesense-clickhouse
     profiles: ["station", "observer"]
-    ports:
-      - "${PORT_CLICKHOUSE_HTTP:-8123}:8123"
-      - "${PORT_CLICKHOUSE_NATIVE:-9000}:9000"
+    depends_on:
+      config-check:
+        condition: service_completed_successfully
+    # ports:
+    #   - "${PORT_CLICKHOUSE_HTTP:-8123}:8123"    # HTTP interface
+    #   - "${PORT_CLICKHOUSE_NATIVE:-9000}:9000"  # Native TCP interface
     volumes:
       - clickhouse-data:/var/lib/clickhouse
       - clickhouse-logs:/var/log/clickhouse-server
@@ -77,7 +124,7 @@ services:
     environment:
       - CLICKHOUSE_DB=${CLICKHOUSE_DB:-wesense}
       - CLICKHOUSE_USER=${CLICKHOUSE_USER:-default}
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:?Set CLICKHOUSE_PASSWORD in .env}
       - TZ=${TZ:-Pacific/Auckland}
     ulimits:
       nproc: 65535
@@ -108,6 +155,9 @@ services:
       dockerfile: wesense-ingester-meshtastic/Dockerfile
     container_name: wesense-ingester-meshtastic
     profiles: ["contributor", "station"]
+    depends_on:
+      config-check:
+        condition: service_completed_successfully
     volumes:
       - ./ingester-meshtastic/cache:/app/cache
       - ./ingester-meshtastic/config:/app/config:ro
@@ -118,8 +168,8 @@ services:
       # MQTT input (community mode: local EMQX where Meshtastic node pushes)
       - MQTT_BROKER=${MQTT_HOST:-emqx}
       - MQTT_PORT=${MQTT_PORT:-1883}
-      - MQTT_USERNAME=${MQTT_USER:-}
-      - MQTT_PASSWORD=${MQTT_PASSWORD:-}
+      - MQTT_USERNAME=${MQTT_USER}
+      - MQTT_PASSWORD=${MQTT_PASSWORD}
       # ClickHouse connection (optional, gracefully handles unavailable)
       - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-clickhouse}
       - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
@@ -129,8 +179,8 @@ services:
       # MQTT output for publishing decoded messages
       - WESENSE_OUTPUT_BROKER=${MQTT_HOST:-emqx}
       - WESENSE_OUTPUT_PORT=${MQTT_PORT:-1883}
-      - WESENSE_OUTPUT_USERNAME=${MQTT_USER:-}
-      - WESENSE_OUTPUT_PASSWORD=${MQTT_PASSWORD:-}
+      - WESENSE_OUTPUT_USERNAME=${MQTT_USER}
+      - WESENSE_OUTPUT_PASSWORD=${MQTT_PASSWORD}
       # Logging
       - DEBUG=${DEBUG:-false}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
@@ -157,6 +207,9 @@ services:
       dockerfile: wesense-ingester-wesense/Dockerfile
     container_name: wesense-ingester-wesense
     profiles: ["contributor", "station"]
+    depends_on:
+      config-check:
+        condition: service_completed_successfully
     volumes:
       - ingester-wesense-cache:/app/cache
       - ingester-wesense-logs:/app/logs
@@ -164,8 +217,8 @@ services:
       # MQTT input (subscribe to sensor topics)
       - MQTT_BROKER=${MQTT_HOST:-emqx}
       - MQTT_PORT=${MQTT_PORT:-1883}
-      - MQTT_USERNAME=${MQTT_USER:-}
-      - MQTT_PASSWORD=${MQTT_PASSWORD:-}
+      - MQTT_USERNAME=${MQTT_USER}
+      - MQTT_PASSWORD=${MQTT_PASSWORD}
       # ClickHouse connection (optional, gracefully handles unavailable)
       - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-clickhouse}
       - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
@@ -175,16 +228,18 @@ services:
       # MQTT output for decoded messages
       - WESENSE_OUTPUT_BROKER=${MQTT_HOST:-emqx}
       - WESENSE_OUTPUT_PORT=${MQTT_PORT:-1883}
-      - WESENSE_OUTPUT_USERNAME=${MQTT_USER:-}
-      - WESENSE_OUTPUT_PASSWORD=${MQTT_PASSWORD:-}
+      - WESENSE_OUTPUT_USERNAME=${MQTT_USER}
+      - WESENSE_OUTPUT_PASSWORD=${MQTT_PASSWORD}
       # TTN webhook (optional)
       - TTN_WEBHOOK_ENABLED=${TTN_WEBHOOK_ENABLED:-false}
       - TTN_WEBHOOK_PORT=${TTN_WEBHOOK_PORT:-5000}
       # Logging
       - DEBUG=${DEBUG:-false}
       - TZ=${TZ:-Pacific/Auckland}
-    ports:
-      - "${PORT_TTN_WEBHOOK:-5000}:5000"
+    # TTN webhook port — uncomment if receiving The Things Network uplinks
+    # directly (not needed if using cloudflared tunnel or similar)
+    # ports:
+    #   - "${PORT_TTN_WEBHOOK:-5000}:5000"
     restart: unless-stopped
     networks:
       - wesense-net
@@ -207,20 +262,23 @@ services:
       dockerfile: wesense-ingester-homeassistant/Dockerfile
     container_name: wesense-ingester-homeassistant
     profiles: ["contributor", "station"]
+    depends_on:
+      config-check:
+        condition: service_completed_successfully
     volumes:
       - ./ingester-homeassistant/config:/app/config:ro
       - ingester-ha-logs:/app/logs
     environment:
       # Home Assistant connection
       - HA_URL=${HA_URL:-http://homeassistant.local:8123}
-      - HA_ACCESS_TOKEN=${HA_ACCESS_TOKEN:-}
+      - HA_ACCESS_TOKEN=${HA_ACCESS_TOKEN}
       - NODE_NAME=${HA_NODE_NAME:-}
       # ClickHouse connection (optional, gracefully handles unavailable)
       - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-clickhouse}
       - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
       - CLICKHOUSE_DATABASE=${CLICKHOUSE_DB:-wesense}
       - CLICKHOUSE_USER=${CLICKHOUSE_USER:-default}
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
       # MQTT output for decoded messages
       - LOCAL_MQTT_BROKER=${MQTT_HOST:-emqx}
       - LOCAL_MQTT_PORT=${MQTT_PORT:-1883}
@@ -240,7 +298,9 @@ services:
   # ===========================================================================
   # Respiro - Environmental Sensor Map
   # Profiles: station, observer
-  # Web dashboard displaying sensor data from ClickHouse
+  # Web dashboard displaying sensor data from ClickHouse.
+  # Typically served behind a reverse proxy (SWAG, Caddy, Nginx Proxy Manager)
+  # which handles TLS/letsencrypt — Respiro itself serves plain HTTP.
   # ===========================================================================
   respiro:
     image: ${RESPIRO_IMAGE:-ghcr.io/wesense-earth/wesense-respiro:latest}
@@ -256,19 +316,20 @@ services:
       - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
       - CLICKHOUSE_DATABASE=${CLICKHOUSE_DB:-wesense}
       - CLICKHOUSE_USERNAME=${CLICKHOUSE_USER:-default}
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
       # MQTT for real-time updates (optional)
       - MQTT_BROKER_URL=mqtt://${MQTT_HOST:-emqx}:${MQTT_PORT:-1883}
-      - MQTT_USERNAME=${MQTT_USER:-}
-      - MQTT_PASSWORD=${MQTT_PASSWORD:-}
+      - MQTT_USERNAME=${MQTT_USER}
+      - MQTT_PASSWORD=${MQTT_PASSWORD}
       - MQTT_TOPIC_FILTER=wesense/decoded/#
       # Server
       - PORT=3000
       - HOST=0.0.0.0
-      # Map defaults (Auckland, NZ)
-      - MAP_CENTER_LAT=${MAP_CENTER_LAT:--36.848}
-      - MAP_CENTER_LNG=${MAP_CENTER_LNG:-174.763}
-      - MAP_ZOOM_LEVEL=${MAP_ZOOM_LEVEL:-10}
+      # Map centre — auto-detects from sensor data by default.
+      # Uncomment to override (values from .env if set).
+      # - MAP_CENTER_LAT=${MAP_CENTER_LAT:--36.848}
+      # - MAP_CENTER_LNG=${MAP_CENTER_LNG:-174.763}
+      # - MAP_ZOOM_LEVEL=${MAP_ZOOM_LEVEL:-10}
       - TZ=${TZ:-Pacific/Auckland}
     depends_on:
       clickhouse:

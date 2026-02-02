@@ -33,7 +33,7 @@ services:
       - -c
       - |
         fail=0
-        for var in CLICKHOUSE_PASSWORD MQTT_PASSWORD; do
+        for var in CLICKHOUSE_PASSWORD; do
           eval val=\$$var
           if [ "$$val" = "CHANGEME" ] || [ -z "$$val" ]; then
             echo "ERROR: $$var is not set — change it in .env" >&2
@@ -48,7 +48,6 @@ services:
         echo "Config OK — all passwords set."
     environment:
       - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
-      - MQTT_PASSWORD=${MQTT_PASSWORD}
     networks: []
     restart: "no"
 

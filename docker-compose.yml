@@ -144,8 +144,9 @@ services:
   # Profiles: contributor, station
   # Community mode (default): receives from a local Meshtastic node via EMQX
   # Public mode: subscribes to mqtt.meshtastic.org (hub operators only)
-  # Note: depends_on removed so contributor profile works without ClickHouse.
-  # The ingester handles missing ClickHouse gracefully (MQTT-only mode).
+  # Note: No depends_on for EMQX/ClickHouse — the contributor profile runs
+  # ingesters without local EMQX or ClickHouse (they connect to remote hosts).
+  # Ingesters retry connections automatically, so startup order doesn't matter.
   # ===========================================================================
   ingester-meshtastic:
     image: ${INGESTER_MESHTASTIC_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-meshtastic:latest}
@@ -253,6 +254,9 @@ services:
   # Profiles: contributor, station
   # Pulls sensor data from Home Assistant (WebSocket/REST)
   # Critical: loop prevention filters exclude WeSense ESP32 devices
+  #
+  # Requires config/config.yaml — see ingester-homeassistant/config/config.yaml.sample
+  # Will exit cleanly if config is missing (restart: on-failure prevents crash loops).
   # ===========================================================================
   ingester-homeassistant:
     image: ${INGESTER_HA_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-homeassistant:latest}
@@ -285,7 +289,7 @@ services:
       - DISABLE_CLICKHOUSE=${DISABLE_CLICKHOUSE:-false}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - TZ=${TZ:-Pacific/Auckland}
-    restart: unless-stopped
+    restart: on-failure
     networks:
       - wesense-net
     logging:

@@ -146,9 +146,8 @@ services:
   # Profiles: contributor, station
   # Community mode (default): receives from a local Meshtastic node via EMQX
   # Public mode: subscribes to mqtt.meshtastic.org (hub operators only)
-  # Note: No depends_on for EMQX/ClickHouse — the contributor profile runs
-  # ingesters without local EMQX or ClickHouse (they connect to remote hosts).
-  # Ingesters retry connections automatically, so startup order doesn't matter.
+  # depends_on with required: false — waits for EMQX/ClickHouse in station
+  # profile, skips gracefully in contributor profile (connects to remote hosts).
   # ===========================================================================
   ingester-meshtastic:
     image: ${INGESTER_MESHTASTIC_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-meshtastic:latest}
@@ -160,6 +159,12 @@ services:
     depends_on:
       config-check:
         condition: service_completed_successfully
+      emqx:
+        condition: service_healthy
+        required: false
+      clickhouse:
+        condition: service_healthy
+        required: false
     volumes:
       - ./ingester-meshtastic/cache:/app/cache
       - ./ingester-meshtastic/config:/app/config:ro
@@ -212,6 +217,12 @@ services:
     depends_on:
       config-check:
         condition: service_completed_successfully
+      emqx:
+        condition: service_healthy
+        required: false
+      clickhouse:
+        condition: service_healthy
+        required: false
     volumes:
       - ingester-wesense-cache:/app/cache
       - ingester-wesense-logs:/app/logs
@@ -270,6 +281,12 @@ services:
     depends_on:
       config-check:
         condition: service_completed_successfully
+      emqx:
+        condition: service_healthy
+        required: false
+      clickhouse:
+        condition: service_healthy
+        required: false
     volumes:
       - ./ingester-homeassistant/config:/app/config:ro
       - ingester-ha-logs:/app/logs

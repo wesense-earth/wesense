@@ -14,10 +14,6 @@
 #   2. Edit .env with your values
 #   3. Run: docker compose --profile station up -d
 #   4. Access Respiro map at http://localhost:3000
-#
-# Building locally (instead of pulling images):
-#   docker compose --profile station build
-#   docker compose --profile station up -d
 
 services:
   # ===========================================================================
@@ -151,9 +147,6 @@ services:
   # ===========================================================================
   ingester-meshtastic:
     image: ${INGESTER_MESHTASTIC_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-meshtastic:latest}
-    build:
-      context: ..
-      dockerfile: wesense-ingester-meshtastic/Dockerfile
     container_name: wesense-ingester-meshtastic
     profiles: ["contributor", "station"]
     depends_on:
@@ -209,9 +202,6 @@ services:
   # ===========================================================================
   ingester-wesense:
     image: ${INGESTER_WESENSE_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-wesense:latest}
-    build:
-      context: ..
-      dockerfile: wesense-ingester-wesense/Dockerfile
     container_name: wesense-ingester-wesense
     profiles: ["contributor", "station"]
     depends_on:
@@ -273,9 +263,6 @@ services:
   # ===========================================================================
   ingester-homeassistant:
     image: ${INGESTER_HA_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-homeassistant:latest}
-    build:
-      context: ..
-      dockerfile: wesense-ingester-homeassistant/Dockerfile
     container_name: wesense-ingester-homeassistant
     profiles: ["contributor", "station"]
     depends_on:

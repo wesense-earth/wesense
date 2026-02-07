@@ -25,6 +25,7 @@ services:
     container_name: wesense-config-check
     profiles: ["hub", "station", "contributor", "observer"]
     environment:
+      - CLICKHOUSE_ADMIN_PASSWORD=${CLICKHOUSE_ADMIN_PASSWORD:-}
       - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-}
       - EMQX_DASHBOARD_PASSWORD=${EMQX_DASHBOARD_PASSWORD:-}
       - MQTT_USER=${MQTT_USER:-}
@@ -36,9 +37,13 @@ services:
       - |
         ok=true
 
-        # ClickHouse password — required for station/observer profiles
+        # ClickHouse passwords — required for station/observer profiles
         case "$$COMPOSE_PROFILES" in
           *station*|*observer*)
+            if [ -z "$$CLICKHOUSE_ADMIN_PASSWORD" ] || [ "$$CLICKHOUSE_ADMIN_PASSWORD" = "CHANGEME" ]; then
+              echo "ERROR: CLICKHOUSE_ADMIN_PASSWORD must be set to a real password in .env (not empty, not CHANGEME)"
+              ok=false
+            fi
             if [ -z "$$CLICKHOUSE_PASSWORD" ] || [ "$$CLICKHOUSE_PASSWORD" = "CHANGEME" ]; then
               echo "ERROR: CLICKHOUSE_PASSWORD must be set to a real password in .env (not empty, not CHANGEME)"
               ok=false
@@ -151,8 +156,13 @@ services:
       - ./clickhouse/init:/docker-entrypoint-initdb.d:ro
     environment:
       - CLICKHOUSE_DB=${CLICKHOUSE_DB:-wesense}
-      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-default}
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:?Set CLICKHOUSE_PASSWORD in .env}
+      # Admin user — used by Docker image for init scripts and management
+      - CLICKHOUSE_USER=default
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_ADMIN_PASSWORD:?Set CLICKHOUSE_ADMIN_PASSWORD in .env}
+      - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
+      # App user — created by 00-create-app-user.sh on first start
+      - CLICKHOUSE_APP_USER=${CLICKHOUSE_USER:-wesense}
+      - CLICKHOUSE_APP_PASSWORD=${CLICKHOUSE_PASSWORD}
       - TZ=${TZ:-Pacific/Auckland}
     cap_add:
       - SYS_NICE            # Suppresses "get_mempolicy: Operation not permitted" NUMA warnings
@@ -319,7 +329,7 @@ services:
       - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-clickhouse}
       - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
       - CLICKHOUSE_DATABASE=${CLICKHOUSE_DB:-wesense}
-      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-default}
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-wesense}
       - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
       # MQTT output for decoded messages
       - LOCAL_MQTT_BROKER=${MQTT_HOST:-emqx}
@@ -357,7 +367,7 @@ services:
       - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-clickhouse}
       - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
       - CLICKHOUSE_DATABASE=${CLICKHOUSE_DB:-wesense}
-      - CLICKHOUSE_USERNAME=${CLICKHOUSE_USER:-default}
+      - CLICKHOUSE_USERNAME=${CLICKHOUSE_USER:-wesense}
       - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
       # MQTT for real-time updates (optional)
       - MQTT_BROKER_URL=mqtt://${MQTT_HOST:-emqx}:${MQTT_PORT:-1883}

@@ -24,14 +24,14 @@ cd wesense
 
 # 2. Configure
 cp .env.sample .env
-# Edit .env with your settings (at minimum, set CLICKHOUSE_PASSWORD)
+# Edit .env — change all CHANGEME passwords before starting
 
 # 3. Start
 docker compose --profile station up -d
 
 # 4. Access
 # Respiro Map: http://localhost:3000
-# EMQX Dashboard: http://localhost:18083 (admin/public)
+# EMQX Dashboard: http://localhost:18083 (admin / your EMQX_DASHBOARD_PASSWORD)
 ```
 
 ## Deployment Profiles
@@ -73,10 +73,39 @@ See `.env.sample` for all available options:
 
 ## Security Notes
 
-1. **Set a strong ClickHouse password** in `.env`
-2. **Change the EMQX dashboard password** on first login (default: admin/public)
-3. **Change the EMQX Erlang cookie** in `emqx/etc/emqx.conf` for multi-node deployments
-4. **Enable TLS** for production (`TLS_MQTT_ENABLED=true`)
+1. **Change all CHANGEME passwords** in `.env` before starting — the config-check service will block startup if you don't
+2. **ClickHouse uses two accounts**: `default` (admin, internal only) and `wesense` (restricted app user for ingesters/Respiro). The `wesense` user is created automatically on first start
+3. **MQTT authentication is opt-in**: set `MQTT_USER` + `MQTT_PASSWORD` in `.env` to enable it. Leave both empty for anonymous access (fine for local networks)
+4. **EMQX dashboard password**: set `EMQX_DASHBOARD_PASSWORD` in `.env` (login as `admin`)
+5. **Change the EMQX Erlang cookie** in `emqx/etc/emqx.conf` for multi-node deployments
+6. **Enable TLS** for production (`TLS_MQTT_ENABLED=true`)
+
+## Migrating Existing Deployments
+
+If you're upgrading from an older version that used `CLICKHOUSE_USER=default` for everything:
+
+1. Add the new variables to your `.env`:
+   ```
+   CLICKHOUSE_ADMIN_PASSWORD=<your-existing-clickhouse-password>
+   EMQX_DASHBOARD_PASSWORD=<choose-a-password>
+   ```
+
+2. Create the restricted ClickHouse app user manually (the init script only runs on first start):
+   ```bash
+   docker exec wesense-clickhouse clickhouse-client --query "
+     CREATE USER IF NOT EXISTS wesense IDENTIFIED BY '<your-app-password>';
+     GRANT SELECT, INSERT ON wesense.* TO wesense;
+     GRANT SELECT, INSERT ON wesense_respiro.* TO wesense;
+   "
+   ```
+
+3. Update your `.env`:
+   ```
+   CLICKHOUSE_USER=wesense
+   CLICKHOUSE_PASSWORD=<your-app-password>
+   ```
+
+4. Restart the stack: `docker compose --profile station up -d`
 
 ## Related Repositories
 

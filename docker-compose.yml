@@ -89,6 +89,7 @@ services:
     image: emqx/emqx:5.8.9
     container_name: wesense-emqx
     profiles: ["hub", "station"]
+    user: "0:0"
     depends_on:
       config-check:
         condition: service_completed_successfully
@@ -109,6 +110,10 @@ services:
       - ./emqx/etc/emqx.conf:/opt/emqx/etc/emqx.conf:ro
       - ./emqx/scripts/init-auth.sh:/opt/emqx/scripts/init-auth.sh:ro
     environment:
+      # Run as this UID:GID (default 1000:1000 = emqx image default)
+      # TrueNAS: set to 568:568 (apps:apps) in .env
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
       # MQTT authentication (opt-in: set both to enable, leave empty for anonymous)
       - MQTT_USER=${MQTT_USER:-}
       - MQTT_PASSWORD=${MQTT_PASSWORD:-}

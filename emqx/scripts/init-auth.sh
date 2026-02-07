@@ -1,22 +1,35 @@
 #!/bin/sh
-# init-auth.sh — EMQX entrypoint wrapper for opt-in MQTT authentication
+# init-auth.sh — EMQX entrypoint wrapper
 #
-# When MQTT_USER and MQTT_PASSWORD are both set:
-#   1. Generates a bootstrap CSV with the credentials
-#   2. Exports EMQX env-var overrides to enable built-in DB authentication
-#   3. Spawns a background process to delete the CSV after EMQX ingests it
+# Runs as root (user: "0:0" in docker-compose), then drops to PUID:PGID.
 #
-# When they are not set, EMQX starts with anonymous access (default behavior).
+# Responsibilities:
+#   1. Fixes data directory ownership (fresh deployments create them as root)
+#   2. Optionally enables MQTT authentication when MQTT_USER + MQTT_PASSWORD are set
+#   3. Drops privileges to PUID:PGID before starting EMQX
 set -e
 
+PUID="${PUID:-1000}"
+PGID="${PGID:-1000}"
 BOOTSTRAP_FILE="/opt/emqx/etc/auth-bootstrap.csv"
 
+# --- Fix ownership ---
+# Ensure the entire EMQX tree is owned by PUID:PGID so the process can
+# read binaries/configs and write to data/log after we drop privileges.
+chown -R "$PUID:$PGID" /opt/emqx 2>/dev/null || true
+
+# Point HOME inside /opt/emqx so Erlang's cookie file and other runtime
+# files land somewhere PUID:PGID owns, regardless of /etc/passwd.
+export HOME=/opt/emqx
+
+# --- MQTT authentication (opt-in) ---
 if [ -n "$MQTT_USER" ] && [ -n "$MQTT_PASSWORD" ]; then
     echo "init-auth: MQTT_USER and MQTT_PASSWORD are set — enabling authentication"
 
     # Generate bootstrap CSV (username,password,is_superuser)
     # EMQX hashes the plaintext password on import.
     printf '%s,%s,true\n' "$MQTT_USER" "$MQTT_PASSWORD" > "$BOOTSTRAP_FILE"
+    chown "$PUID:$PGID" "$BOOTSTRAP_FILE"
     chmod 600 "$BOOTSTRAP_FILE"
 
     # Configure EMQX built-in DB authenticator via environment variable overrides
@@ -49,5 +62,7 @@ else
     echo "init-auth: MQTT_USER/MQTT_PASSWORD not set — anonymous access (no authentication)"
 fi
 
-# Hand off to the real EMQX entrypoint
-exec /usr/bin/docker-entrypoint.sh "$@"
+# --- Drop privileges and hand off to the real EMQX entrypoint ---
+echo "init-auth: starting EMQX as UID=$PUID GID=$PGID"
+exec setpriv --reuid="$PUID" --regid="$PGID" --init-groups \
+    /usr/bin/docker-entrypoint.sh "$@"

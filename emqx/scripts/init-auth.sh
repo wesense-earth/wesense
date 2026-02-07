@@ -64,5 +64,5 @@ fi
 
 # --- Drop privileges and hand off to the real EMQX entrypoint ---
 echo "init-auth: starting EMQX as UID=$PUID GID=$PGID"
-exec setpriv --reuid="$PUID" --regid="$PGID" --init-groups \
+exec setpriv --reuid="$PUID" --regid="$PGID" --clear-groups \
     /usr/bin/docker-entrypoint.sh "$@"

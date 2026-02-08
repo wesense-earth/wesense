@@ -40,6 +40,11 @@ if [ -n "$MQTT_USER" ] && [ -n "$MQTT_PASSWORD" ]; then
     chown "$PUID:$PGID" "$BOOTSTRAP_FILE"
     chmod 600 "$BOOTSTRAP_FILE"
 
+    # Debug: show generated CSV structure (hash/salt are not secrets)
+    echo "init-auth: bootstrap CSV content:"
+    cat "$BOOTSTRAP_FILE"
+    echo "init-auth: salt length=$(printf '%s' "$SALT" | wc -c), hash length=$(printf '%s' "$PASS_HASH" | wc -c)"
+
     # Configure EMQX built-in DB authenticator via environment variable overrides
     export EMQX_AUTHENTICATION__1__MECHANISM="password_based"
     export EMQX_AUTHENTICATION__1__BACKEND="built_in_database"
@@ -47,6 +52,7 @@ if [ -n "$MQTT_USER" ] && [ -n "$MQTT_PASSWORD" ]; then
     export EMQX_AUTHENTICATION__1__PASSWORD_HASH_ALGORITHM__NAME="sha256"
     export EMQX_AUTHENTICATION__1__PASSWORD_HASH_ALGORITHM__SALT_POSITION="suffix"
     export EMQX_AUTHENTICATION__1__BOOTSTRAP_FILE="$BOOTSTRAP_FILE"
+    export EMQX_AUTHENTICATION__1__BOOTSTRAP_TYPE="hash"
 
     # Background cleanup: wait for EMQX to become healthy, then remove the CSV
     # so plaintext credentials don't persist on disk. The subshell survives

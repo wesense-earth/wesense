@@ -593,6 +593,7 @@ services:
     environment:
       - PORT=5200
       - DATA_DIR=/app/data
+      - ANNOUNCE_ADDRESS=${ANNOUNCE_ADDRESS:-}
       - TZ=${TZ:-Pacific/Auckland}
     restart: unless-stopped
     networks:

@@ -598,7 +598,7 @@ services:
   orbitdb:
     image: ${ORBITDB_IMAGE:-ghcr.io/wesense-earth/wesense-orbitdb:${IMAGE_TAG:-latest}}
     container_name: wesense-orbitdb
-    profiles: ["station", "observer"]
+    profiles: ["station", "observer", "bootstrap"]
     # Host networking is required for libp2p peer discovery:
     #   - LAN: mDNS multicast needs the real network interface (Docker bridge isolates it)
     #   - WAN: DHT provider records need a routable address
@@ -611,6 +611,7 @@ services:
       - LIBP2P_PORT=${PORT_LIBP2P:-4002}
       - DATA_DIR=/app/data
       - ANNOUNCE_ADDRESS=${ANNOUNCE_ADDRESS:-}
+      - ORBITDB_BOOTSTRAP_PEERS=${ORBITDB_BOOTSTRAP_PEERS:-}
       - TZ=${TZ:-Pacific/Auckland}
     restart: unless-stopped
     logging:

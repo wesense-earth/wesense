@@ -239,7 +239,7 @@ services:
       zenohd:
         condition: service_started
         required: false
-      wesense-orbitdb:
+      orbitdb:
         condition: service_started
         required: false
     extra_hosts:
@@ -319,7 +319,7 @@ services:
       zenohd:
         condition: service_started
         required: false
-      wesense-orbitdb:
+      orbitdb:
         condition: service_started
         required: false
     extra_hosts:
@@ -389,7 +389,7 @@ services:
       zenohd:
         condition: service_started
         required: false
-      wesense-orbitdb:
+      orbitdb:
         condition: service_started
         required: false
     extra_hosts:
@@ -595,7 +595,7 @@ services:
   # replication. Port 4002 exposed for libp2p peer connections between stations.
   # HTTP API (5200) is internal to Docker network only.
   # ===========================================================================
-  wesense-orbitdb:
+  orbitdb:
     image: ${ORBITDB_IMAGE:-ghcr.io/wesense-earth/wesense-orbitdb:${IMAGE_TAG:-latest}}
     container_name: wesense-orbitdb
     profiles: ["station", "observer"]
@@ -638,7 +638,7 @@ services:
       zenohd:
         condition: service_started
         required: false
-      wesense-orbitdb:
+      orbitdb:
         condition: service_started
         required: false
     extra_hosts:

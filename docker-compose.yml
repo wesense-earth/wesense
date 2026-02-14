@@ -242,6 +242,8 @@ services:
       wesense-orbitdb:
         condition: service_started
         required: false
+    extra_hosts:
+      - "wesense-orbitdb:host-gateway"
     volumes:
       - ${DATA_DIR:-./data}/ingester-meshtastic/cache:/app/cache
       - ${DATA_DIR:-./data}/ingester-meshtastic/logs:/app/logs
@@ -381,6 +383,8 @@ services:
       wesense-orbitdb:
         condition: service_started
         required: false
+    extra_hosts:
+      - "wesense-orbitdb:host-gateway"
     volumes:
       - ${DATA_DIR:-./data}/ingester-wesense/cache:/app/cache
       - ${DATA_DIR:-./data}/ingester-wesense/logs:/app/logs
@@ -586,18 +590,20 @@ services:
     image: ${ORBITDB_IMAGE:-ghcr.io/wesense-earth/wesense-orbitdb:${IMAGE_TAG:-latest}}
     container_name: wesense-orbitdb
     profiles: ["station", "observer"]
+    # Host networking is required for libp2p peer discovery:
+    #   - LAN: mDNS multicast needs the real network interface (Docker bridge isolates it)
+    #   - WAN: DHT provider records need a routable address
+    # Other containers reach the HTTP API (port 5200) via extra_hosts: host-gateway.
+    network_mode: host
     volumes:
       - ${DATA_DIR:-./data}/orbitdb:/app/data
-    ports:
-      - "${PORT_LIBP2P:-4002}:4002"
     environment:
       - PORT=5200
+      - LIBP2P_PORT=${PORT_LIBP2P:-4002}
       - DATA_DIR=/app/data
       - ANNOUNCE_ADDRESS=${ANNOUNCE_ADDRESS:-}
       - TZ=${TZ:-Pacific/Auckland}
     restart: unless-stopped
-    networks:
-      - wesense-net
     logging:
       driver: "json-file"
       options:
@@ -626,6 +632,8 @@ services:
       wesense-orbitdb:
         condition: service_started
         required: false
+    extra_hosts:
+      - "wesense-orbitdb:host-gateway"
     volumes:
       - ${DATA_DIR:-./data}/zenoh-bridge/data:/app/data
       - ${DATA_DIR:-./data}/zenoh-bridge/logs:/app/logs

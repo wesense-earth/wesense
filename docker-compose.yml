@@ -32,8 +32,6 @@ services:
       - MQTT_USER=${MQTT_USER:-}
       - MQTT_PASSWORD=${MQTT_PASSWORD:-}
       - COMPOSE_PROFILES=${COMPOSE_PROFILES:-}
-      - ZENOH_ENABLED=${ZENOH_ENABLED:-true}
-      - ZENOH_ROUTERS=${ZENOH_ROUTERS:-}
     entrypoint: /bin/sh
     command:
       - -c
@@ -70,11 +68,6 @@ services:
         fi
         if [ -z "$$MQTT_USER" ] && [ -z "$$MQTT_PASSWORD" ]; then
           echo "NOTE: MQTT_USER/MQTT_PASSWORD not set — EMQX will allow anonymous connections"
-        fi
-
-        # Zenoh — warn if enabled but no routers configured
-        if [ "$$ZENOH_ENABLED" = "true" ] && [ -z "$$ZENOH_ROUTERS" ]; then
-          echo "WARNING: ZENOH_ENABLED=true but ZENOH_ROUTERS is empty — Zenoh publishing will fail"
         fi
 
         if [ "$$ok" = "false" ]; then
@@ -600,7 +593,6 @@ services:
     environment:
       - PORT=5200
       - DATA_DIR=/app/data
-      - ORBITDB_BOOTSTRAP_PEERS=${ORBITDB_BOOTSTRAP_PEERS:-}
       - TZ=${TZ:-Pacific/Auckland}
     restart: unless-stopped
     networks:

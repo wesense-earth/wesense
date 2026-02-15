@@ -635,7 +635,7 @@ services:
       - LIBP2P_PORT=${PORT_LIBP2P:-4002}
       - DATA_DIR=/app/data
       - ANNOUNCE_ADDRESS=${ANNOUNCE_ADDRESS:-}
-      - ORBITDB_BOOTSTRAP_PEERS=${ORBITDB_BOOTSTRAP_PEERS:-}
+      - ORBITDB_BOOTSTRAP_PEERS=${ORBITDB_BOOTSTRAP_PEERS:-bootstrap.wesense.earth}
       - TZ=${TZ:-Pacific/Auckland}
     restart: unless-stopped
     logging:

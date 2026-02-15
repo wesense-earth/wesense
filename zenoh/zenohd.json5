@@ -1,12 +1,6 @@
 {
   mode: "router",
   listen: { endpoints: ["tcp/0.0.0.0:7447"] },
-  connect: {
-    endpoints: [
-      "tcp/router1.wesense.earth:7447",
-      "tcp/router2.wesense.earth:7447"
-    ]
-  },
   scouting: {
     multicast: { enabled: true },
     gossip: { enabled: true }

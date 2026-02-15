@@ -201,14 +201,13 @@ services:
     depends_on:
       config-check:
         condition: service_completed_successfully
-    ports:
-      - "${PORT_ZENOH:-7447}:7447"
+    # Host networking enables Zenoh's multicast scouting for automatic
+    # LAN peer discovery. Other containers reach zenohd via extra_hosts.
+    network_mode: host
     volumes:
       - ./zenoh/zenohd.json5:/zenoh.json5:ro
     command: ["--config", "/zenoh.json5"]
     restart: unless-stopped
-    networks:
-      - wesense-net
     logging:
       driver: "json-file"
       options:
@@ -244,6 +243,7 @@ services:
         required: false
     extra_hosts:
       - "wesense-orbitdb:host-gateway"
+      - "zenohd:host-gateway"
     volumes:
       - ${DATA_DIR:-./data}/ingester-meshtastic/cache:/app/cache
       - ${DATA_DIR:-./data}/ingester-meshtastic/logs:/app/logs
@@ -324,6 +324,7 @@ services:
         required: false
     extra_hosts:
       - "wesense-orbitdb:host-gateway"
+      - "zenohd:host-gateway"
     volumes:
       - ${DATA_DIR:-./data}/ingester-meshtastic-downlink/cache:/app/cache
       - ${DATA_DIR:-./data}/ingester-meshtastic-downlink/logs:/app/logs
@@ -394,6 +395,7 @@ services:
         required: false
     extra_hosts:
       - "wesense-orbitdb:host-gateway"
+      - "zenohd:host-gateway"
     volumes:
       - ${DATA_DIR:-./data}/ingester-wesense/cache:/app/cache
       - ${DATA_DIR:-./data}/ingester-wesense/logs:/app/logs
@@ -644,6 +646,7 @@ services:
         required: false
     extra_hosts:
       - "wesense-orbitdb:host-gateway"
+      - "zenohd:host-gateway"
     volumes:
       - ${DATA_DIR:-./data}/zenoh-bridge/data:/app/data
       - ${DATA_DIR:-./data}/zenoh-bridge/logs:/app/logs
@@ -699,6 +702,8 @@ services:
       zenohd:
         condition: service_started
         required: false
+    extra_hosts:
+      - "zenohd:host-gateway"
     environment:
       # Zenoh connection
       - ZENOH_ENABLED=true

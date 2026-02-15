@@ -560,6 +560,8 @@ services:
       orbitdb:
         condition: service_started
         required: false
+    extra_hosts:
+      - "wesense-orbitdb:host-gateway"
     restart: unless-stopped
     networks:
       - wesense-net

@@ -277,6 +277,9 @@ services:
       - ORBITDB_ENABLED=${ORBITDB_ENABLED:-true}
       - ORBITDB_URL=${ORBITDB_URL:-http://wesense-orbitdb:5200}
       - ORBITDB_SYNC_INTERVAL=${ORBITDB_SYNC_INTERVAL:-3600}
+      # WAN peer discovery (registers zenoh_endpoint in OrbitDB node registry)
+      - ANNOUNCE_ADDRESS=${ANNOUNCE_ADDRESS:-}
+      - PORT_ZENOH=${PORT_ZENOH:-7447}
       # Logging
       - DEBUG=${DEBUG:-false}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
@@ -355,6 +358,9 @@ services:
       - ORBITDB_ENABLED=${ORBITDB_ENABLED:-true}
       - ORBITDB_URL=${ORBITDB_URL:-http://wesense-orbitdb:5200}
       - ORBITDB_SYNC_INTERVAL=${ORBITDB_SYNC_INTERVAL:-3600}
+      # WAN peer discovery (registers zenoh_endpoint in OrbitDB node registry)
+      - ANNOUNCE_ADDRESS=${ANNOUNCE_ADDRESS:-}
+      - PORT_ZENOH=${PORT_ZENOH:-7447}
       # Logging
       - DEBUG=${DEBUG:-false}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
@@ -429,6 +435,9 @@ services:
       - ORBITDB_ENABLED=${ORBITDB_ENABLED:-true}
       - ORBITDB_URL=${ORBITDB_URL:-http://wesense-orbitdb:5200}
       - ORBITDB_SYNC_INTERVAL=${ORBITDB_SYNC_INTERVAL:-3600}
+      # WAN peer discovery (registers zenoh_endpoint in OrbitDB node registry)
+      - ANNOUNCE_ADDRESS=${ANNOUNCE_ADDRESS:-}
+      - PORT_ZENOH=${PORT_ZENOH:-7447}
       # TTN webhook (optional)
       - TTN_WEBHOOK_ENABLED=${TTN_WEBHOOK_ENABLED:-false}
       - TTN_WEBHOOK_PORT=${TTN_WEBHOOK_PORT:-5000}
@@ -670,7 +679,7 @@ services:
       - CLICKHOUSE_FLUSH_INTERVAL=${CLICKHOUSE_FLUSH_INTERVAL:-10}
       # Trust store
       - TRUST_FILE=/app/data/trust_list.json
-      # OrbitDB registry
+      # OrbitDB registry (trust sync only — bridge is an observer, not a registrant)
       - ORBITDB_ENABLED=${ORBITDB_ENABLED:-true}
       - ORBITDB_URL=${ORBITDB_URL:-http://wesense-orbitdb:5200}
       - ORBITDB_SYNC_INTERVAL=${ORBITDB_SYNC_INTERVAL:-3600}

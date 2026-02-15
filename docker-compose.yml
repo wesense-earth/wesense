@@ -279,6 +279,7 @@ services:
       - ORBITDB_SYNC_INTERVAL=${ORBITDB_SYNC_INTERVAL:-3600}
       # WAN peer discovery (registers zenoh_endpoint in OrbitDB node registry)
       - ANNOUNCE_ADDRESS=${ANNOUNCE_ADDRESS:-}
+      - ZENOH_ANNOUNCE_ADDRESS=${ZENOH_ANNOUNCE_ADDRESS:-}
       - PORT_ZENOH=${PORT_ZENOH:-7447}
       # Logging
       - DEBUG=${DEBUG:-false}
@@ -360,6 +361,7 @@ services:
       - ORBITDB_SYNC_INTERVAL=${ORBITDB_SYNC_INTERVAL:-3600}
       # WAN peer discovery (registers zenoh_endpoint in OrbitDB node registry)
       - ANNOUNCE_ADDRESS=${ANNOUNCE_ADDRESS:-}
+      - ZENOH_ANNOUNCE_ADDRESS=${ZENOH_ANNOUNCE_ADDRESS:-}
       - PORT_ZENOH=${PORT_ZENOH:-7447}
       # Logging
       - DEBUG=${DEBUG:-false}
@@ -437,6 +439,7 @@ services:
       - ORBITDB_SYNC_INTERVAL=${ORBITDB_SYNC_INTERVAL:-3600}
       # WAN peer discovery (registers zenoh_endpoint in OrbitDB node registry)
       - ANNOUNCE_ADDRESS=${ANNOUNCE_ADDRESS:-}
+      - ZENOH_ANNOUNCE_ADDRESS=${ZENOH_ANNOUNCE_ADDRESS:-}
       - PORT_ZENOH=${PORT_ZENOH:-7447}
       # TTN webhook (optional)
       - TTN_WEBHOOK_ENABLED=${TTN_WEBHOOK_ENABLED:-false}

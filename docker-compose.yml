@@ -524,6 +524,10 @@ services:
       - "${PORT_RESPIRO:-3001}:3000"
     volumes:
       - ${DATA_DIR:-./data}/respiro:/app/data
+      # Uncomment to enable container resource stats on the Stats dashboard.
+      # Read-only — Respiro can query stats but cannot control containers.
+      # Also set DOCKER_STATS_ENABLED=true in .env.
+      # - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
       # ClickHouse connection
       - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-clickhouse}
@@ -543,6 +547,8 @@ services:
       - ZENOH_API_URL=${ZENOH_API_URL:-http://zenoh-api:5100}
       # OrbitDB API (optional — enables /api/stats/orbitdb|nodes|trust endpoints)
       - ORBITDB_URL=${ORBITDB_URL:-http://wesense-orbitdb:5200}
+      # Container resource stats (optional — requires Docker socket mount below)
+      - DOCKER_STATS_ENABLED=${DOCKER_STATS_ENABLED:-false}
       # Map centre — auto-detects from sensor data by default.
       # Uncomment to override (values from .env if set).
       # - MAP_CENTER_LAT=${MAP_CENTER_LAT:--36.848}

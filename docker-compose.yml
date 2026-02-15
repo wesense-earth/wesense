@@ -521,7 +521,7 @@ services:
     container_name: wesense-respiro
     profiles: ["station", "observer"]
     ports:
-      - "${PORT_RESPIRO:-3000}:3000"
+      - "${PORT_RESPIRO:-3001}:3000"
     volumes:
       - ${DATA_DIR:-./data}/respiro:/app/data
     environment:

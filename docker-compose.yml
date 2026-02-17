@@ -206,8 +206,8 @@ services:
     network_mode: host
     volumes:
       - ./zenoh/zenohd.json5:/zenoh.json5:ro
-      - ./zenoh/entrypoint.sh:/entrypoint.sh:ro
-    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+      - ./zenoh/proxy-entrypoint.sh:/proxy-entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/proxy-entrypoint.sh"]
     environment:
       - ZENOH_PROXY_ROUTER=${ZENOH_PROXY_ROUTER:-}
     restart: unless-stopped

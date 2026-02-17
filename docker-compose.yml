@@ -206,7 +206,10 @@ services:
     network_mode: host
     volumes:
       - ./zenoh/zenohd.json5:/zenoh.json5:ro
-    command: ["--config", "/zenoh.json5"]
+      - ./zenoh/entrypoint.sh:/entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    environment:
+      - ZENOH_PROXY_ROUTER=${ZENOH_PROXY_ROUTER:-}
     restart: unless-stopped
     logging:
       driver: "json-file"

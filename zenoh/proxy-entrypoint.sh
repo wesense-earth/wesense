@@ -8,4 +8,4 @@ if [ -n "$ZENOH_PROXY_ROUTER" ]; then
     ARGS="$ARGS --connect $ZENOH_PROXY_ROUTER"
 fi
 
-exec zenohd $ARGS
+exec /zenohd $ARGS

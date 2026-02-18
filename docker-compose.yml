@@ -530,10 +530,9 @@ services:
       - "${PORT_RESPIRO:-3001}:3000"
     volumes:
       - ${DATA_DIR:-./data}/respiro:/app/data
-      # Uncomment to enable container resource stats on the Stats dashboard.
-      # Read-only — Respiro can query stats but cannot control containers.
-      # Also set DOCKER_STATS_ENABLED=true in .env.
-      # - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Docker socket for container resource stats on the Stats dashboard.
+      # Set DOCKER_SOCK=/var/run/docker.sock and DOCKER_STATS_ENABLED=true in .env.
+      - ${DOCKER_SOCK:-/dev/null}:/var/run/docker.sock:ro
     environment:
       # ClickHouse connection
       - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-clickhouse}

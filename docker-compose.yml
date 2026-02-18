@@ -555,6 +555,7 @@ services:
       - ORBITDB_URL=${ORBITDB_URL:-http://wesense-orbitdb:5200}
       # Container resource stats (optional — requires Docker socket mount below)
       - DOCKER_STATS_ENABLED=${DOCKER_STATS_ENABLED:-false}
+      - DOCKER_STATS_CONTAINER_PREFIX=${DOCKER_STATS_CONTAINER_PREFIX:-wesense}
       # Map centre — auto-detects from sensor data by default.
       # Uncomment to override (values from .env if set).
       # - MAP_CENTER_LAT=${MAP_CENTER_LAT:--36.848}

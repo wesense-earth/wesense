@@ -95,11 +95,11 @@ services:
     entrypoint: /opt/emqx/scripts/init-auth.sh
     command: ["/opt/emqx/bin/emqx", "foreground"]
     ports:
-      - "${PORT_MQTT:-1883}:1883"              # MQTT
-      - "${PORT_MQTT_TLS:-8883}:8883"          # MQTTS (TLS)
-      - "${PORT_WS:-8083}:8083"                # WebSocket MQTT
-      - "${PORT_WS_TLS:-8084}:8084"            # WSS (TLS WebSocket)
-      - "${PORT_DASHBOARD:-18083}:18083"        # EMQX admin dashboard
+      - "${PORT_MQTT:-1883}:1883"                          # MQTT
+      - "${PORT_MQTT_TLS:-127.0.0.1:8883}:8883"           # MQTTS (TLS)
+      - "${PORT_WS:-127.0.0.1:8083}:8083"                 # WebSocket MQTT
+      - "${PORT_WS_TLS:-127.0.0.1:8084}:8084"             # WSS (TLS WebSocket)
+      - "${PORT_DASHBOARD:-127.0.0.1:18083}:18083"         # EMQX admin dashboard
     volumes:
       - ${DATA_DIR:-./data}/emqx/data:/opt/emqx/data
       - ${DATA_DIR:-./data}/emqx/log:/opt/emqx/log
@@ -149,8 +149,8 @@ services:
       config-check:
         condition: service_completed_successfully
     ports:
-      - "${PORT_CLICKHOUSE_HTTP:-8123}:8123"      # HTTP interface
-      - "${PORT_CLICKHOUSE_NATIVE:-9000}:9000"    # Native TCP interface
+      - "${PORT_CLICKHOUSE_HTTP:-127.0.0.1:8123}:8123"    # HTTP interface
+      - "${PORT_CLICKHOUSE_NATIVE:-127.0.0.1:9000}:9000"  # Native TCP interface
     # Set CLICKHOUSE_DATA_DIR in .env to store sensor data on a separate drive (e.g., HDD)
     # Defaults to DATA_DIR/clickhouse alongside other services
     volumes:

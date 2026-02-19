@@ -128,6 +128,7 @@ create_bridge "forward_meshtastic_default" '{
     },
     "remote": {
       "topic": "${topic}",
+      "payload": "${payload}",
       "qos": 1,
       "retain": false
     }
@@ -159,6 +160,7 @@ create_bridge "forward_cottle_map_uplink" '{
     },
     "remote": {
       "topic": "${topic}",
+      "payload": "${payload}",
       "qos": 1,
       "retain": false
     }

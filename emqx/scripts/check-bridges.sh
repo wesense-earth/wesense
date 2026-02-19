@@ -62,6 +62,27 @@ except Exception as e:
 "
 }
 
+check_rule() {
+    response=$(curl -s -H "Authorization: Bearer $TOKEN" \
+        "${API_URL}/rules/forward_msh_to_bridges/metrics" 2>/dev/null)
+
+    echo "$response" | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    m = d.get('metrics', {})
+    matched = m.get('matched', 0)
+    passed = m.get('passed', 0)
+    failed = m.get('failed', 0)
+    actions_ok = m.get('actions.success', 0)
+    actions_fail = m.get('actions.failed', 0)
+    rate = m.get('matched.rate', 0)
+    print('  %-30s  matched: %-6s  passed: %-6s  actions.ok: %-6s  actions.fail: %-6s  rate: %s/s' % ('rule (msh/#)', matched, passed, actions_ok, actions_fail, rate))
+except Exception as e:
+    print('  %-30s  ERROR: %s' % ('rule', e))
+"
+}
+
 poll() {
     TOKEN=$(get_token)
     if [ -z "$TOKEN" ]; then
@@ -70,6 +91,7 @@ poll() {
     fi
 
     echo "$(date '+%Y-%m-%d %H:%M:%S')  EMQX Bridge Status  (${EMQX_API})"
+    check_rule
     check_bridge "forward_meshtastic_default" "meshtastic.org"
     check_bridge "forward_cottle_map_uplink" "cottle map (uplink)"
 }

@@ -83,6 +83,8 @@ services:
   # Profiles: hub, station
   #
   # Ports exposed to host are configured in .env — see "Host Port Mapping".
+  # For additional ports (dashboard, WebSocket, TLS, ClickHouse), copy
+  # docker-compose.override.yml.sample to docker-compose.override.yml.
   # ===========================================================================
   emqx:
     image: emqx/emqx:5.8.9
@@ -95,11 +97,7 @@ services:
     entrypoint: /opt/emqx/scripts/init-auth.sh
     command: ["/opt/emqx/bin/emqx", "foreground"]
     ports:
-      - "${PORT_MQTT:-1883}:1883"                          # MQTT
-      - "${PORT_MQTT_TLS:-127.0.0.1:8883}:8883"           # MQTTS (TLS)
-      - "${PORT_WS:-127.0.0.1:8083}:8083"                 # WebSocket MQTT
-      - "${PORT_WS_TLS:-127.0.0.1:8084}:8084"             # WSS (TLS WebSocket)
-      - "${PORT_DASHBOARD:-127.0.0.1:18083}:18083"         # EMQX admin dashboard
+      - "${PORT_MQTT:-1883}:1883"
     volumes:
       - ${DATA_DIR:-./data}/emqx/data:/opt/emqx/data
       - ${DATA_DIR:-./data}/emqx/log:/opt/emqx/log
@@ -138,8 +136,9 @@ services:
   # ClickHouse - Time Series Database
   # Profiles: station, observer
   # Creates both 'wesense' and 'wesense_respiro' databases on first start.
-  # Services connect via Docker network internally. To access from outside
-  # Docker (e.g., DBeaver, clickhouse-client), set PORT_CLICKHOUSE_HTTP in .env.
+  # Services connect via Docker network internally. To access ClickHouse from
+  # outside Docker (e.g., DBeaver, clickhouse-client), add a
+  # docker-compose.override.yml with port mappings.
   # ===========================================================================
   clickhouse:
     image: clickhouse/clickhouse-server:24
@@ -148,9 +147,6 @@ services:
     depends_on:
       config-check:
         condition: service_completed_successfully
-    ports:
-      - "${PORT_CLICKHOUSE_HTTP:-127.0.0.1:8123}:8123"    # HTTP interface
-      - "${PORT_CLICKHOUSE_NATIVE:-127.0.0.1:9000}:9000"  # Native TCP interface
     # Set CLICKHOUSE_DATA_DIR in .env to store sensor data on a separate drive (e.g., HDD)
     # Defaults to DATA_DIR/clickhouse alongside other services
     volumes:

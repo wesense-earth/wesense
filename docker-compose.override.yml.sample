@@ -1,0 +1,28 @@
+# docker-compose.override.yml — Local port overrides
+#
+# Copy this file to docker-compose.override.yml to expose optional ports.
+# Docker Compose automatically merges it with docker-compose.yml.
+# The override file is gitignored so it won't conflict on git pull.
+#
+#   cp docker-compose.override.yml.sample docker-compose.override.yml
+#
+# Uncomment the services and ports you need, then: docker compose up -d
+
+services:
+  # EMQX optional ports
+  emqx:
+    ports:
+      # EMQX admin dashboard — login as 'admin' with EMQX_DASHBOARD_PASSWORD
+      - "${PORT_DASHBOARD:-18083}:18083"
+      # WebSocket MQTT (browser-based MQTT clients)
+      # - "${PORT_WS:-8083}:8083"
+      # MQTTS (TLS-encrypted MQTT, requires TLS_MQTT_ENABLED=true)
+      # - "${PORT_MQTT_TLS:-8883}:8883"
+      # WSS (TLS-encrypted WebSocket, requires TLS_WS_ENABLED=true)
+      # - "${PORT_WS_TLS:-8084}:8084"
+
+  # ClickHouse — only needed for external tools (DBeaver, clickhouse-client)
+  # clickhouse:
+  #   ports:
+  #     - "${PORT_CLICKHOUSE_HTTP:-8123}:8123"
+  #     - "${PORT_CLICKHOUSE_NATIVE:-9000}:9000"

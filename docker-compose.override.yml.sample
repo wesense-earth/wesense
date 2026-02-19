@@ -26,3 +26,27 @@ services:
   #   ports:
   #     - "${PORT_CLICKHOUSE_HTTP:-8123}:8123"
   #     - "${PORT_CLICKHOUSE_NATIVE:-9000}:9000"
+
+  # Cloudflare Tunnel — routes external traffic to internal services
+  # Used for TTN webhooks (The Things Network → ingester-wesense:5000)
+  #
+  # Setup:
+  #   1. Create a tunnel in Cloudflare Zero Trust → Networks → Tunnels
+  #   2. Add a public hostname route pointing to http://wesense-ingester-wesense:5000
+  #   3. Set CLOUDFLARED_TUNNEL_TOKEN in .env
+  #   4. Set TTN_WEBHOOK_ENABLED=true in .env
+  #   5. Configure TTN application webhook URL to https://<your-tunnel-hostname>/ttn/uplink
+  # cloudflared:
+  #   image: cloudflare/cloudflared:latest
+  #   container_name: wesense-cloudflared
+  #   command: tunnel --no-autoupdate run --token ${CLOUDFLARED_TUNNEL_TOKEN}
+  #   environment:
+  #     - TZ=${TZ:-Pacific/Auckland}
+  #   restart: unless-stopped
+  #   networks:
+  #     - wesense-net
+  #   logging:
+  #     driver: "json-file"
+  #     options:
+  #       max-size: "10m"
+  #       max-file: "3"

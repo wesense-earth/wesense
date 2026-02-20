@@ -6,9 +6,9 @@
 #   station     - Full local stack (EMQX + ClickHouse + Ingesters + Respiro)
 #   hub         - MQTT broker only (production mqtt.wesense.earth)
 #   downlink    - Meshtastic global downlink (add to station, hub operators only)
-#   observer    - Map + ClickHouse (future, needs P2P)
+#   observer    - Map + ClickHouse, receives data via Zenoh P2P
+#   guardian    - IPFS archiver (ClickHouse + OrbitDB + Archiver)
 #   researcher  - ClickHouse + IPFS (future)
-#   guardian    - IPFS pinning (future)
 #
 # Quick start:
 #   1. Copy .env.sample to .env
@@ -24,7 +24,7 @@ services:
   config-check:
     image: busybox:latest
     container_name: wesense-config-check
-    profiles: ["hub", "station", "contributor", "observer", "downlink"]
+    profiles: ["hub", "station", "contributor", "observer", "downlink", "guardian"]
     environment:
       - CLICKHOUSE_ADMIN_PASSWORD=${CLICKHOUSE_ADMIN_PASSWORD:-}
       - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-}
@@ -38,9 +38,9 @@ services:
       - |
         ok=true
 
-        # ClickHouse passwords — required for station/observer profiles
+        # ClickHouse passwords — required for station/observer/guardian profiles
         case "$$COMPOSE_PROFILES" in
-          *station*|*observer*)
+          *station*|*observer*|*guardian*)
             if [ -z "$$CLICKHOUSE_ADMIN_PASSWORD" ] || [ "$$CLICKHOUSE_ADMIN_PASSWORD" = "CHANGEME" ]; then
               echo "ERROR: CLICKHOUSE_ADMIN_PASSWORD must be set to a real password in .env (not empty, not CHANGEME)"
               ok=false
@@ -143,7 +143,7 @@ services:
   clickhouse:
     image: clickhouse/clickhouse-server:24
     container_name: wesense-clickhouse
-    profiles: ["station", "observer"]
+    profiles: ["station", "observer", "guardian"]
     depends_on:
       config-check:
         condition: service_completed_successfully
@@ -619,7 +619,7 @@ services:
   orbitdb:
     image: ${ORBITDB_IMAGE:-ghcr.io/wesense-earth/wesense-orbitdb:${IMAGE_TAG:-latest}}
     container_name: wesense-orbitdb
-    profiles: ["station", "observer", "bootstrap"]
+    profiles: ["station", "observer", "bootstrap", "guardian"]
     # Host networking is required for libp2p peer discovery:
     #   - LAN: mDNS multicast needs the real network interface (Docker bridge isolates it)
     #   - WAN: DHT provider records need a routable address
@@ -627,10 +627,13 @@ services:
     network_mode: host
     volumes:
       - ${DATA_DIR:-./data}/orbitdb:/app/data
+      # Shared staging volume — archiver writes files here, orbitdb ingests them to IPFS
+      - ${DATA_DIR:-./data}/archiver/staging:/app/data/staging
     environment:
       - PORT=5200
       - LIBP2P_PORT=${PORT_LIBP2P:-4002}
       - DATA_DIR=/app/data
+      - ARCHIVE_STAGING_DIR=/app/data/staging
       - ANNOUNCE_ADDRESS=${ANNOUNCE_ADDRESS:-}
       - ORBITDB_BOOTSTRAP_PEERS=${ORBITDB_BOOTSTRAP_PEERS:-bootstrap.wesense.earth}
       - TZ=${TZ:-Pacific/Auckland}
@@ -745,23 +748,65 @@ services:
         max-file: "5"
 
   # ===========================================================================
-  # IPFS - Distributed Storage (future: guardian, researcher profiles)
+  # WeSense Archiver — IPFS Archive Service
+  # Profiles: station, guardian
+  # Queries ClickHouse for signed readings, verifies signatures, exports
+  # Parquet archives with trust snapshots and signed manifests, uploads to
+  # IPFS via wesense-orbitdb, and submits attestations for multi-archiver
+  # consensus. Runs on a configurable daily schedule.
   # ===========================================================================
-  # ipfs:
-  #   image: ipfs/kubo:v0.32
-  #   container_name: wesense-ipfs
-  #   profiles: ["guardian", "researcher"]
-  #   ports:
-  #     - "${PORT_IPFS_SWARM:-4001}:4001"       # Swarm
-  #     - "${PORT_IPFS_API:-5001}:5001"         # API
-  #     - "${PORT_IPFS_GATEWAY:-8080}:8080"     # Gateway
-  #   volumes:
-  #     - ipfs-data:/data/ipfs
-  #   environment:
-  #     - TZ=${TZ:-Pacific/Auckland}
-  #   restart: unless-stopped
-  #   networks:
-  #     - wesense-net
+  archiver:
+    image: ${ARCHIVER_IMAGE:-ghcr.io/wesense-earth/wesense-archiver:${IMAGE_TAG:-latest}}
+    container_name: wesense-archiver
+    profiles: ["station", "guardian"]
+    depends_on:
+      config-check:
+        condition: service_completed_successfully
+      clickhouse:
+        condition: service_healthy
+      orbitdb:
+        condition: service_started
+        required: false
+    extra_hosts:
+      - "wesense-orbitdb:host-gateway"
+    volumes:
+      - ${DATA_DIR:-./data}/archiver/keys:/app/data/keys
+      # Shared staging volume — archiver writes files, orbitdb reads them
+      - ${DATA_DIR:-./data}/archiver/staging:/app/data/staging
+    environment:
+      # ClickHouse connection
+      - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-clickhouse}
+      - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
+      - CLICKHOUSE_DATABASE=${CLICKHOUSE_DB:-wesense}
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-wesense}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+      # Archiver signing key
+      - ZENOH_KEY_DIR=/app/data/keys
+      # Trust store (synced from OrbitDB on startup)
+      - TRUST_FILE=/app/data/trust_list.json
+      # OrbitDB (attestation submission + trust sync + IPFS upload)
+      - ORBITDB_URL=${ORBITDB_URL:-http://wesense-orbitdb:5200}
+      # Staging directory (shared volume with orbitdb)
+      - ARCHIVE_STAGING_DIR=/app/data/staging
+      # Schedule — time of day (UTC) to run archive cycle
+      - ARCHIVE_SCHEDULE_TIME=${ARCHIVE_SCHEDULE_TIME:-01:00}
+      # Lookback — how many days back to archive (1 = yesterday)
+      - ARCHIVE_LOOKBACK_DAYS=${ARCHIVE_LOOKBACK_DAYS:-1}
+      # Regions — comma-separated country codes, empty = all
+      - ARCHIVE_REGIONS=${ARCHIVE_REGIONS:-}
+      # Run archive cycle on container startup (useful for catchup)
+      - ARCHIVE_RUN_ON_STARTUP=${ARCHIVE_RUN_ON_STARTUP:-false}
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - TZ=${TZ:-Pacific/Auckland}
+    restart: unless-stopped
+    networks:
+      - wesense-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
 
 # =============================================================================
 # Networks

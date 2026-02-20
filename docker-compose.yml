@@ -788,14 +788,12 @@ services:
       - ORBITDB_URL=${ORBITDB_URL:-http://wesense-orbitdb:5200}
       # Staging directory (shared volume with orbitdb)
       - ARCHIVE_STAGING_DIR=/app/data/staging
-      # Schedule — time of day (UTC) to run archive cycle
-      - ARCHIVE_SCHEDULE_TIME=${ARCHIVE_SCHEDULE_TIME:-01:00}
-      # Lookback — how many days back to archive (1 = yesterday)
-      - ARCHIVE_LOOKBACK_DAYS=${ARCHIVE_LOOKBACK_DAYS:-1}
+      # Schedule — hours between archive cycles (gap-aware, safe to repeat)
+      - ARCHIVE_INTERVAL_HOURS=${ARCHIVE_INTERVAL_HOURS:-4}
+      # Earliest date to archive (empty = use earliest ClickHouse data)
+      - ARCHIVE_START_DATE=${ARCHIVE_START_DATE:-}
       # Regions — comma-separated country codes, empty = all
       - ARCHIVE_REGIONS=${ARCHIVE_REGIONS:-}
-      # Run archive cycle on container startup (useful for catchup)
-      - ARCHIVE_RUN_ON_STARTUP=${ARCHIVE_RUN_ON_STARTUP:-false}
       # Logging
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - TZ=${TZ:-Pacific/Auckland}

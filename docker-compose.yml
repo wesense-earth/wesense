@@ -785,7 +785,9 @@ services:
       # Trust store (synced from OrbitDB on startup)
       - TRUST_FILE=/app/data/trust_list.json
       # OrbitDB (attestation submission + trust sync + IPFS upload)
-      - ORBITDB_URL=${ORBITDB_URL:-http://wesense-orbitdb:5200}
+      # ARCHIVER_ORBITDB_URL overrides ORBITDB_URL for the archiver only,
+      # allowing secondary LAN stations to upload archives through an upstream node.
+      - ORBITDB_URL=${ARCHIVER_ORBITDB_URL:-${ORBITDB_URL:-http://wesense-orbitdb:5200}}
       # Staging directory (shared volume with orbitdb)
       - ARCHIVE_STAGING_DIR=/app/data/staging
       # Schedule — hours between archive cycles (gap-aware, safe to repeat)

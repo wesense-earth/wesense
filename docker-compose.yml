@@ -124,10 +124,10 @@ services:
       - TZ=${TZ:-Pacific/Auckland}
     healthcheck:
       test: ["CMD", "emqx", "ctl", "status"]
-      interval: 30s
+      interval: 15s
       timeout: 10s
-      retries: 3
-      start_period: 30s
+      retries: 5
+      start_period: 90s
     restart: unless-stopped
     networks:
       - wesense-net

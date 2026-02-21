@@ -20,9 +20,10 @@ BOOTSTRAP_FILE="/opt/emqx/etc/auth-bootstrap.csv"
 # tries to write config snapshots before the directories exist.
 mkdir -p /opt/emqx/data/configs /opt/emqx/log
 
-# Ensure the entire EMQX tree is owned by PUID:PGID so the process can
-# read binaries/configs and write to data/log after we drop privileges.
-chown -R "$PUID:$PGID" /opt/emqx 2>/dev/null || true
+# Fix ownership on writable directories only. The rest of /opt/emqx
+# (binaries, plugins, Erlang runtime) is read-only and doesn't need chown.
+# Recursively chowning the entire tree added 30-60s to every startup.
+chown -R "$PUID:$PGID" /opt/emqx/data /opt/emqx/log 2>/dev/null || true
 
 # Point HOME inside /opt/emqx so Erlang's cookie file and other runtime
 # files land somewhere PUID:PGID owns, regardless of /etc/passwd.

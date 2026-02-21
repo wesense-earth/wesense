@@ -613,7 +613,7 @@ services:
   # OrbitDB — Distributed Node Registry & Trust Sync
   # Profiles: station, observer
   # Helia (IPFS) + OrbitDB for automated peer discovery and trust list
-  # replication. Port 4002 exposed for libp2p peer connections between stations.
+  # replication. Port 4001 exposed for libp2p peer connections between stations.
   # HTTP API (5200) is internal to Docker network only.
   # ===========================================================================
   orbitdb:
@@ -631,7 +631,7 @@ services:
       - ${DATA_DIR:-./data}/archiver/staging:/app/data/staging
     environment:
       - PORT=5200
-      - LIBP2P_PORT=${PORT_LIBP2P:-4002}
+      - LIBP2P_PORT=${PORT_LIBP2P:-4001}
       - DATA_DIR=/app/data
       - ARCHIVE_STAGING_DIR=/app/data/staging
       - ANNOUNCE_ADDRESS=${ANNOUNCE_ADDRESS:-}

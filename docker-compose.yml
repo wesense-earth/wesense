@@ -128,7 +128,7 @@ services:
       timeout: 10s
       retries: 5
       start_period: 90s
-    restart: unless-stopped
+    restart: always
     networks:
       - wesense-net
 
@@ -175,7 +175,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-    restart: unless-stopped
+    restart: always
     networks:
       - wesense-net
 
@@ -201,7 +201,7 @@ services:
     entrypoint: ["/bin/sh", "/proxy-entrypoint.sh"]
     environment:
       - ZENOH_PROXY_ROUTER=${ZENOH_PROXY_ROUTER:-}
-    restart: unless-stopped
+    restart: always
     logging:
       driver: "json-file"
       options:
@@ -279,7 +279,7 @@ services:
       - DEBUG=${DEBUG:-false}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - TZ=${TZ:-Pacific/Auckland}
-    restart: unless-stopped
+    restart: always
     networks:
       - wesense-net
     logging:
@@ -361,7 +361,7 @@ services:
       - DEBUG=${DEBUG:-false}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - TZ=${TZ:-Pacific/Auckland}
-    restart: unless-stopped
+    restart: always
     networks:
       - wesense-net
     logging:
@@ -445,7 +445,7 @@ services:
     # directly (not needed if using cloudflared tunnel or similar)
     # ports:
     #   - "${PORT_TTN_WEBHOOK:-5000}:5000"
-    restart: unless-stopped
+    restart: always
     networks:
       - wesense-net
     logging:
@@ -461,7 +461,7 @@ services:
   # Critical: loop prevention filters exclude WeSense ESP32 devices
   #
   # Requires config/config.yaml — see ingester-homeassistant/config/config.yaml.sample
-  # Will exit cleanly if config is missing (restart: on-failure prevents crash loops).
+  # Requires config/config.yaml — see ingester-homeassistant/config/config.yaml.sample
   # ===========================================================================
   ingester-homeassistant:
     image: ${INGESTER_HA_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-homeassistant:${IMAGE_TAG:-latest}}
@@ -497,7 +497,7 @@ services:
       - DISABLE_CLICKHOUSE=${DISABLE_CLICKHOUSE:-false}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - TZ=${TZ:-Pacific/Auckland}
-    restart: on-failure
+    restart: always
     networks:
       - wesense-net
     logging:
@@ -565,7 +565,7 @@ services:
         required: false
     extra_hosts:
       - "wesense-orbitdb:host-gateway"
-    restart: unless-stopped
+    restart: always
     networks:
       - wesense-net
 
@@ -600,7 +600,7 @@ services:
       - RUN_ON_STARTUP=${CLASSIFIER_RUN_ON_STARTUP:-true}
       - DRY_RUN=${CLASSIFIER_DRY_RUN:-false}
       - TZ=${TZ:-Pacific/Auckland}
-    restart: unless-stopped
+    restart: always
     networks:
       - wesense-net
     logging:
@@ -637,7 +637,7 @@ services:
       - ANNOUNCE_ADDRESS=${ANNOUNCE_ADDRESS:-}
       - ORBITDB_BOOTSTRAP_PEERS=${ORBITDB_BOOTSTRAP_PEERS:-bootstrap.wesense.earth}
       - TZ=${TZ:-Pacific/Auckland}
-    restart: unless-stopped
+    restart: always
     logging:
       driver: "json-file"
       options:
@@ -699,7 +699,7 @@ services:
       # Logging
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - TZ=${TZ:-Pacific/Auckland}
-    restart: unless-stopped
+    restart: always
     networks:
       - wesense-net
     logging:
@@ -738,7 +738,7 @@ services:
       # Logging
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - TZ=${TZ:-Pacific/Auckland}
-    restart: unless-stopped
+    restart: always
     networks:
       - wesense-net
     logging:
@@ -799,7 +799,7 @@ services:
       # Logging
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - TZ=${TZ:-Pacific/Auckland}
-    restart: unless-stopped
+    restart: always
     networks:
       - wesense-net
     logging:

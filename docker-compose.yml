@@ -220,6 +220,8 @@ services:
     image: ${INGESTER_MESHTASTIC_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-meshtastic:${IMAGE_TAG:-latest}}
     container_name: wesense-ingester-meshtastic
     profiles: ["contributor", "station"]
+    deploy:
+      replicas: ${INGESTER_MESHTASTIC:-1}
     depends_on:
       config-check:
         condition: service_completed_successfully
@@ -380,6 +382,8 @@ services:
     image: ${INGESTER_WESENSE_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-wesense:${IMAGE_TAG:-latest}}
     container_name: wesense-ingester-wesense
     profiles: ["contributor", "station"]
+    deploy:
+      replicas: ${INGESTER_WESENSE:-1}
     depends_on:
       config-check:
         condition: service_completed_successfully
@@ -467,6 +471,8 @@ services:
     image: ${INGESTER_HA_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-homeassistant:${IMAGE_TAG:-latest}}
     container_name: wesense-ingester-homeassistant
     profiles: ["contributor", "station"]
+    deploy:
+      replicas: ${INGESTER_HOMEASSISTANT:-1}
     depends_on:
       config-check:
         condition: service_completed_successfully

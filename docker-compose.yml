@@ -549,6 +549,8 @@ services:
       - ZENOH_API_URL=${ZENOH_API_URL:-http://zenoh-api:5100}
       # OrbitDB API (optional — enables /api/stats/orbitdb|nodes|trust endpoints)
       - ORBITDB_URL=${ORBITDB_URL:-http://wesense-orbitdb:5200}
+      # IPFS public gateway for archive links on the Stats page
+      - IPFS_GATEWAY_URL=${IPFS_GATEWAY_URL:-https://cloudflare-ipfs.com}
       # Container resource stats (optional — requires Docker socket mount below)
       - DOCKER_STATS_ENABLED=${DOCKER_STATS_ENABLED:-false}
       - DOCKER_STATS_CONTAINER_PREFIX=${DOCKER_STATS_CONTAINER_PREFIX:-wesense}

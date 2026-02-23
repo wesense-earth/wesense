@@ -549,6 +549,8 @@ services:
       - ZENOH_API_URL=${ZENOH_API_URL:-http://zenoh-api:5100}
       # OrbitDB API (optional — enables /api/stats/orbitdb|nodes|trust endpoints)
       - ORBITDB_URL=${ORBITDB_URL:-http://wesense-orbitdb:5200}
+      # Kubo IPFS API (optional — enables /api/stats/archives endpoint)
+      - KUBO_API_URL=${KUBO_API_URL:-http://kubo:5001}
       # IPFS public gateway for archive links on the Stats page
       - IPFS_GATEWAY_URL=${IPFS_GATEWAY_URL:-https://dweb.link}
       # Container resource stats (optional — requires Docker socket mount below)
@@ -570,6 +572,9 @@ services:
         required: false
       orbitdb:
         condition: service_started
+        required: false
+      kubo:
+        condition: service_healthy
         required: false
     extra_hosts:
       - "wesense-orbitdb:host-gateway"
@@ -618,10 +623,52 @@ services:
         max-file: "5"
 
   # ===========================================================================
+  # Kubo — IPFS Node for Archive Storage
+  # Profiles: station, guardian
+  # Dedicated go-ipfs node for storing and serving IPFS archives. Kubo's
+  # native QUIC+TCP transport and full DHT implementation provides reliable
+  # content discovery by public IPFS gateways (50-300+ DHT peers vs Helia's
+  # ~6 TCP-only peers). The archiver writes directly to Kubo via MFS API.
+  # Port 4001 (TCP+UDP/QUIC) for IPFS swarm — the standard IPFS port.
+  # API port 5001 is internal only (not published to host).
+  # ===========================================================================
+  kubo:
+    image: ipfs/kubo:latest
+    container_name: wesense-kubo
+    profiles: ["station", "guardian"]
+    depends_on:
+      config-check:
+        condition: service_completed_successfully
+    ports:
+      - "${PORT_KUBO_SWARM:-4001}:4001/tcp"
+      - "${PORT_KUBO_SWARM:-4001}:4001/udp"
+    volumes:
+      - ${DATA_DIR:-./data}/kubo:/data/ipfs
+      - ./kubo/init.sh:/container-init.d/001-configure.sh:ro
+    environment:
+      - ANNOUNCE_ADDRESS=${ANNOUNCE_ADDRESS:-}
+    healthcheck:
+      test: ["CMD", "ipfs", "id"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: always
+    networks:
+      - wesense-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ===========================================================================
   # OrbitDB — Distributed Node Registry & Trust Sync
   # Profiles: station, observer
   # Helia (IPFS) + OrbitDB for automated peer discovery and trust list
-  # replication. Port 4001 exposed for libp2p peer connections between stations.
+  # replication. Handles: node registry, trust sync, attestation consensus.
+  # Archive storage has moved to the dedicated Kubo service above.
+  # Port 4002 for libp2p peer connections (OrbitDB replication only).
   # HTTP API (5200) is internal to Docker network only.
   # ===========================================================================
   orbitdb:
@@ -635,13 +682,10 @@ services:
     network_mode: host
     volumes:
       - ${DATA_DIR:-./data}/orbitdb:/app/data
-      # Shared staging volume — archiver writes files here, orbitdb ingests them to IPFS
-      - ${DATA_DIR:-./data}/archiver/staging:/app/data/staging
     environment:
       - PORT=5200
-      - LIBP2P_PORT=${PORT_LIBP2P:-4001}
+      - LIBP2P_PORT=${PORT_ORBITDB_P2P:-4002}
       - DATA_DIR=/app/data
-      - ARCHIVE_STAGING_DIR=/app/data/staging
       - ANNOUNCE_ADDRESS=${ANNOUNCE_ADDRESS:-}
       - ORBITDB_BOOTSTRAP_PEERS=${ORBITDB_BOOTSTRAP_PEERS:-bootstrap.wesense.earth}
       - TZ=${TZ:-Pacific/Auckland}
@@ -760,8 +804,8 @@ services:
   # Profiles: station, guardian
   # Queries ClickHouse for signed readings, verifies signatures, exports
   # Parquet archives with trust snapshots and signed manifests, uploads to
-  # IPFS via wesense-orbitdb, and submits attestations for multi-archiver
-  # consensus. Runs on a configurable daily schedule.
+  # IPFS via Kubo MFS API, and submits attestations to OrbitDB for
+  # multi-archiver consensus. Runs on a configurable daily schedule.
   # ===========================================================================
   archiver:
     image: ${ARCHIVER_IMAGE:-ghcr.io/wesense-earth/wesense-archiver:${IMAGE_TAG:-latest}}
@@ -772,6 +816,9 @@ services:
         condition: service_completed_successfully
       clickhouse:
         condition: service_healthy
+      kubo:
+        condition: service_healthy
+        required: false
       orbitdb:
         condition: service_started
         required: false
@@ -779,7 +826,6 @@ services:
       - "wesense-orbitdb:host-gateway"
     volumes:
       - ${DATA_DIR:-./data}/archiver/keys:/app/data/keys
-      # Shared staging volume — archiver writes files, orbitdb reads them
       - ${DATA_DIR:-./data}/archiver/staging:/app/data/staging
     environment:
       # ClickHouse connection
@@ -792,11 +838,13 @@ services:
       - ZENOH_KEY_DIR=/app/data/keys
       # Trust store (synced from OrbitDB on startup)
       - TRUST_FILE=/app/data/trust_list.json
-      # OrbitDB (attestation submission + trust sync + IPFS upload)
-      # ARCHIVER_ORBITDB_URL overrides ORBITDB_URL for the archiver only,
+      # Kubo IPFS node (archive storage via MFS API)
+      # ARCHIVER_KUBO_API_URL overrides KUBO_API_URL for the archiver only,
       # allowing secondary LAN stations to upload archives through an upstream node.
+      - KUBO_API_URL=${ARCHIVER_KUBO_API_URL:-${KUBO_API_URL:-http://kubo:5001}}
+      # OrbitDB (attestation submission + trust sync only — archives moved to Kubo)
       - ORBITDB_URL=${ARCHIVER_ORBITDB_URL:-${ORBITDB_URL:-http://wesense-orbitdb:5200}}
-      # Staging directory (shared volume with orbitdb)
+      # Staging directory (local to archiver container)
       - ARCHIVE_STAGING_DIR=/app/data/staging
       # Schedule — hours between archive cycles (gap-aware, safe to repeat)
       - ARCHIVE_INTERVAL_HOURS=${ARCHIVE_INTERVAL_HOURS:-4}

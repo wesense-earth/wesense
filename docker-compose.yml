@@ -870,6 +870,7 @@ services:
 networks:
   wesense-net:
     driver: bridge
+    enable_ipv6: ${ENABLE_IPV6:-false}
   # For connecting to external networks (e.g., SWAG reverse proxy)
   # Uncomment if you have a proxy-net network (e.g., from SWAG/Nginx Proxy Manager)
   # proxy-net:

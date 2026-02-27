@@ -44,7 +44,7 @@ rm -f /data/ipfs/repo.lock 2>/dev/null || true
 # ipfs init then run /container-init.d/001-configure.sh.
 if [ -f /data/ipfs/config ]; then
   echo "Kubo: Existing repo found, applying configuration..."
-  su-exec ipfs sh /configure-kubo.sh
+  gosu ipfs sh /configure-kubo.sh
 fi
 
 exec /usr/local/bin/start_ipfs "$@"

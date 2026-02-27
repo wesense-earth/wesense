@@ -20,11 +20,20 @@ ipfs config Addresses.API /ip4/0.0.0.0/tcp/5001
 # by public IPFS gateways (dweb.link, ipfs.io, etc.).
 ipfs config --json Routing.AcceleratedDHTClient true
 
-# Configure the reprovider to announce content frequently. Default is 22h
+# Configure the provider to announce content frequently. Default is 22h
 # which means a newly archived file might not be discoverable for up to 22h.
 # "all" strategy re-announces all pinned + MFS content (not just roots).
-ipfs config --json Reprovider.Interval '"12h"'
-ipfs config --json Reprovider.Strategy '"all"'
+# Kubo 0.40.0 renamed Reprovider → Provide (FATAL if old keys remain).
+ipfs config --json Provide.Strategy '"all"'
+ipfs config --json Provide.DHT.Interval '"12h"'
+
+# Remove deprecated Reprovider section from config (fatal in Kubo 0.40.0+).
+# ipfs config can't delete keys, so edit the JSON file directly with awk.
+CONFIG="${IPFS_PATH:-/data/ipfs}/config"
+if grep -q '"Reprovider"' "$CONFIG" 2>/dev/null; then
+  echo "Kubo: Removing deprecated Reprovider config..."
+  awk '/"Reprovider"[[:space:]]*:/{skip=1;next} skip && /^  \}/{skip=0;next} skip{next} {print}' "$CONFIG" > "${CONFIG}.tmp" && mv "${CONFIG}.tmp" "$CONFIG"
+fi
 
 # Enable the DHT in server mode when publicly reachable (ANNOUNCE_ADDRESS set),
 # otherwise fall back to client mode.

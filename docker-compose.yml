@@ -646,6 +646,7 @@ services:
     command: ["daemon", "--migrate=true", "--agent-version-suffix=docker"]
     volumes:
       - ${DATA_DIR:-./data}/kubo:/data/ipfs
+      - ./kubo/configure.sh:/configure-kubo.sh:ro
       - ./kubo/init.sh:/container-init.d/001-configure.sh:ro
       - ./kubo/entrypoint.sh:/entrypoint-wrapper.sh:ro
     environment:

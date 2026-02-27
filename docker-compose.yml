@@ -642,9 +642,12 @@ services:
     ports:
       - "${PORT_KUBO_SWARM:-4001}:4001/tcp"
       - "${PORT_KUBO_SWARM:-4001}:4001/udp"
+    entrypoint: ["/sbin/tini", "--", "/entrypoint-wrapper.sh"]
+    command: ["daemon", "--migrate=true", "--agent-version-suffix=docker"]
     volumes:
       - ${DATA_DIR:-./data}/kubo:/data/ipfs
       - ./kubo/init.sh:/container-init.d/001-configure.sh:ro
+      - ./kubo/entrypoint.sh:/entrypoint-wrapper.sh:ro
     environment:
       - ANNOUNCE_ADDRESS=${ANNOUNCE_ADDRESS:-}
     healthcheck:

@@ -650,6 +650,8 @@ services:
       - ./kubo/init.sh:/container-init.d/001-configure.sh:ro
       - ./kubo/entrypoint.sh:/entrypoint-wrapper.sh:ro
     environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
       - ANNOUNCE_ADDRESS=${ANNOUNCE_ADDRESS:-}
     healthcheck:
       test: ["CMD", "ipfs", "id"]

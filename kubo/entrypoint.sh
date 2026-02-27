@@ -21,11 +21,13 @@ rm -f /data/ipfs/repo.lock 2>/dev/null || true
 # On first run the config file won't exist yet — that's fine,
 # container-init.d/init.sh will handle it after ipfs init.
 if [ -f /data/ipfs/config ]; then
+  # Capture file ownership before ipfs config commands change it to root.
+  IPFS_OWNER=$(stat -c '%u:%g' /data/ipfs/config)
   echo "Kubo: Existing repo found, applying configuration..."
   . /configure-kubo.sh
   # Restore ownership — ipfs config runs as root but the daemon
-  # runs as the ipfs user and needs to read its own config.
-  chown ipfs:ipfs /data/ipfs/config
+  # runs as a non-root user and needs to read its own config.
+  chown "$IPFS_OWNER" /data/ipfs/config
 fi
 
 exec /usr/local/bin/start_ipfs "$@"

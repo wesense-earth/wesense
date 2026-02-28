@@ -848,8 +848,10 @@ services:
       # ARCHIVER_KUBO_API_URL overrides KUBO_API_URL for the archiver only,
       # allowing secondary LAN stations to upload archives through an upstream node.
       - KUBO_API_URL=${ARCHIVER_KUBO_API_URL:-${KUBO_API_URL:-http://kubo:5001}}
-      # OrbitDB (attestation submission + trust sync only — archives moved to Kubo)
+      # OrbitDB — attestation submission (may point to remote primary hub)
       - ORBITDB_URL=${ARCHIVER_ORBITDB_URL:-${ORBITDB_URL:-http://wesense-orbitdb:5200}}
+      # OrbitDB — trust sync (always local; replicates via libp2p peer sync)
+      - ORBITDB_TRUST_URL=${ORBITDB_URL:-http://wesense-orbitdb:5200}
       # Staging directory (local to archiver container)
       - ARCHIVE_STAGING_DIR=/app/data/staging
       # Schedule — hours between archive cycles (gap-aware, safe to repeat)

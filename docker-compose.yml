@@ -240,7 +240,7 @@ services:
       - KEY_DIR=/app/data/keys
       - TRUST_FILE=/app/data/trust_list.json
       # Iroh storage
-      - IROH_SIDECAR_URL=http://iroh-sidecar:4002
+      - IROH_SIDECAR_URL=http://iroh-sidecar:4400
       # Archive schedule
       - ARCHIVE_INTERVAL_HOURS=${ARCHIVE_INTERVAL_HOURS:-4}
       - ARCHIVE_START_DATE=${ARCHIVE_START_DATE:-}
@@ -282,13 +282,13 @@ services:
     volumes:
       - ${DATA_DIR:-./data}/iroh-sidecar:/app/data
     environment:
-      - IROH_SIDECAR_PORT=4002
+      - IROH_SIDECAR_PORT=4400
       - IROH_DATA_DIR=/app/data
       - IROH_GOSSIP_TOPIC=${IROH_GOSSIP_TOPIC:-wesense-archives}
       - RUST_LOG=${RUST_LOG:-wesense_iroh_sidecar=info}
       - TZ=${TZ:-Pacific/Auckland}
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:4002/status || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4400/status || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3

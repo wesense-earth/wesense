@@ -209,6 +209,52 @@ services:
         max-file: "5"
 
   # ===========================================================================
+  # Storage Gateway — HTTP API for sensor reading ingestion
+  # Profiles: contributor, station
+  # Receives readings from ingesters via POST /readings, geocodes, deduplicates,
+  # and writes to ClickHouse. Replaces direct ClickHouse writes from ingesters.
+  # ===========================================================================
+  gateway:
+    image: ${GATEWAY_IMAGE:-ghcr.io/wesense-earth/wesense-gateway:${IMAGE_TAG:-latest}}
+    container_name: wesense-gateway
+    profiles: ["contributor", "station"]
+    depends_on:
+      config-check:
+        condition: service_completed_successfully
+      clickhouse:
+        condition: service_healthy
+        required: false
+    environment:
+      - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-clickhouse}
+      - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
+      - CLICKHOUSE_DATABASE=${CLICKHOUSE_DB:-wesense}
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-wesense}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+      - CLICKHOUSE_BATCH_SIZE=${CLICKHOUSE_BATCH_SIZE:-100}
+      - CLICKHOUSE_FLUSH_INTERVAL=${CLICKHOUSE_FLUSH_INTERVAL:-10}
+      - KEY_DIR=/app/data/keys
+      - TRUST_FILE=/app/data/trust_list.json
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - TZ=${TZ:-Pacific/Auckland}
+    volumes:
+      - ${DATA_DIR:-./data}/gateway/keys:/app/data/keys
+      - ${DATA_DIR:-./data}/gateway/archives:/app/data/archives
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: always
+    networks:
+      - wesense-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ===========================================================================
   # Meshtastic Ingester (Unified: public + community)
   # Profiles: contributor, station
   # Community mode (default): receives from a local Meshtastic node via EMQX
@@ -225,6 +271,8 @@ services:
     depends_on:
       config-check:
         condition: service_completed_successfully
+      gateway:
+        condition: service_healthy
       emqx:
         condition: service_healthy
         required: false
@@ -245,19 +293,19 @@ services:
       - ${DATA_DIR:-./data}/ingester-meshtastic/logs:/app/logs
       - ${DATA_DIR:-./data}/ingester-meshtastic/keys:/app/data/keys
     environment:
+      # Storage gateway (receives all readings via HTTP)
+      - GATEWAY_URL=http://gateway:8080
       # MQTT input (local EMQX where Meshtastic node pushes)
       - MQTT_BROKER=${MQTT_HOST:-emqx}
       - MQTT_PORT=${MQTT_PORT:-1883}
       - MQTT_USERNAME=${MQTT_USER}
       - MQTT_PASSWORD=${MQTT_PASSWORD}
-      # ClickHouse connection (optional, gracefully handles unavailable)
+      # ClickHouse connection (read-only, used by ZenohQueryable)
       - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-clickhouse}
       - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
       - CLICKHOUSE_DATABASE=${CLICKHOUSE_DB:-wesense}
       - CLICKHOUSE_USER=${CLICKHOUSE_USER:-wesense}
       - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
-      - CLICKHOUSE_BATCH_SIZE=${CLICKHOUSE_BATCH_SIZE:-100}
-      - CLICKHOUSE_FLUSH_INTERVAL=${CLICKHOUSE_FLUSH_INTERVAL:-10}
       # MQTT output for publishing decoded messages
       - WESENSE_OUTPUT_BROKER=${MQTT_HOST:-emqx}
       - WESENSE_OUTPUT_PORT=${MQTT_PORT:-1883}
@@ -310,6 +358,8 @@ services:
     depends_on:
       config-check:
         condition: service_completed_successfully
+      gateway:
+        condition: service_healthy
       emqx:
         condition: service_healthy
         required: false
@@ -332,14 +382,14 @@ services:
       - ${DATA_DIR:-./data}/ingester-meshtastic-downlink/keys:/app/data/keys
     environment:
       - MESHTASTIC_MODE=downlink
-      # ClickHouse connection
+      # Storage gateway (receives all readings via HTTP)
+      - GATEWAY_URL=http://gateway:8080
+      # ClickHouse connection (read-only, used by ZenohQueryable)
       - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-clickhouse}
       - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
       - CLICKHOUSE_DATABASE=${CLICKHOUSE_DB:-wesense}
       - CLICKHOUSE_USER=${CLICKHOUSE_USER:-wesense}
       - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
-      - CLICKHOUSE_BATCH_SIZE=${CLICKHOUSE_BATCH_SIZE:-100}
-      - CLICKHOUSE_FLUSH_INTERVAL=${CLICKHOUSE_FLUSH_INTERVAL:-10}
       # MQTT output for publishing decoded messages
       - WESENSE_OUTPUT_BROKER=${MQTT_HOST:-emqx}
       - WESENSE_OUTPUT_PORT=${MQTT_PORT:-1883}
@@ -387,6 +437,8 @@ services:
     depends_on:
       config-check:
         condition: service_completed_successfully
+      gateway:
+        condition: service_healthy
       emqx:
         condition: service_healthy
         required: false
@@ -407,19 +459,19 @@ services:
       - ${DATA_DIR:-./data}/ingester-wesense/logs:/app/logs
       - ${DATA_DIR:-./data}/ingester-wesense/keys:/app/data/keys
     environment:
+      # Storage gateway (receives all readings via HTTP)
+      - GATEWAY_URL=http://gateway:8080
       # MQTT input (subscribe to sensor topics)
       - MQTT_BROKER=${MQTT_HOST:-emqx}
       - MQTT_PORT=${MQTT_PORT:-1883}
       - MQTT_USERNAME=${MQTT_USER}
       - MQTT_PASSWORD=${MQTT_PASSWORD}
-      # ClickHouse connection (optional, gracefully handles unavailable)
+      # ClickHouse connection (read-only, used by ZenohQueryable)
       - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-clickhouse}
       - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
       - CLICKHOUSE_DATABASE=${CLICKHOUSE_DB:-wesense}
       - CLICKHOUSE_USER=${CLICKHOUSE_USER:-wesense}
       - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
-      - CLICKHOUSE_BATCH_SIZE=${CLICKHOUSE_BATCH_SIZE:-100}
-      - CLICKHOUSE_FLUSH_INTERVAL=${CLICKHOUSE_FLUSH_INTERVAL:-10}
       # MQTT output for decoded messages
       - WESENSE_OUTPUT_BROKER=${MQTT_HOST:-emqx}
       - WESENSE_OUTPUT_PORT=${MQTT_PORT:-1883}
@@ -476,31 +528,25 @@ services:
     depends_on:
       config-check:
         condition: service_completed_successfully
-      emqx:
+      gateway:
         condition: service_healthy
-        required: false
-      clickhouse:
+      emqx:
         condition: service_healthy
         required: false
     volumes:
       - ./ingester-homeassistant/config:/app/config:ro
       - ${DATA_DIR:-./data}/ingester-homeassistant/logs:/app/logs
     environment:
+      # Storage gateway (receives all readings via HTTP)
+      - GATEWAY_URL=http://gateway:8080
       # Home Assistant connection
       - HA_URL=${HA_URL:-http://homeassistant.local:8123}
       - HA_ACCESS_TOKEN=${HA_ACCESS_TOKEN}
       - NODE_NAME=${HA_NODE_NAME:-}
-      # ClickHouse connection (optional, gracefully handles unavailable)
-      - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-clickhouse}
-      - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
-      - CLICKHOUSE_DATABASE=${CLICKHOUSE_DB:-wesense}
-      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-wesense}
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
       # MQTT output for decoded messages
       - LOCAL_MQTT_BROKER=${MQTT_HOST:-emqx}
       - LOCAL_MQTT_PORT=${MQTT_PORT:-1883}
       # Options
-      - DISABLE_CLICKHOUSE=${DISABLE_CLICKHOUSE:-false}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - TZ=${TZ:-Pacific/Auckland}
     restart: always

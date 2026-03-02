@@ -210,9 +210,9 @@ services:
 
   # ===========================================================================
   # Storage Gateway — HTTP API for sensor reading ingestion
-  # Profiles: contributor, station
+  # Profiles: contributor, station, guardian
   # Receives readings from ingesters via POST /readings, geocodes, deduplicates,
-  # and writes to ClickHouse. Replaces direct ClickHouse writes from ingesters.
+  # and writes to ClickHouse and Iroh (via iroh-sidecar).
   # ===========================================================================
   gateway:
     image: ${GATEWAY_IMAGE:-ghcr.io/wesense-earth/wesense-gateway:${IMAGE_TAG:-latest}}
@@ -225,6 +225,8 @@ services:
       clickhouse:
         condition: service_healthy
         required: false
+      iroh-sidecar:
+        condition: service_healthy
     environment:
       # ClickHouse connection
       - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-clickhouse}
@@ -237,8 +239,9 @@ services:
       # Signing and trust
       - KEY_DIR=/app/data/keys
       - TRUST_FILE=/app/data/trust_list.json
-      # Archive settings (guardian profile)
-      - STORAGE_BACKEND=${STORAGE_BACKEND:-filesystem}
+      # Iroh storage
+      - IROH_SIDECAR_URL=http://iroh-sidecar:4002
+      # Archive schedule
       - ARCHIVE_INTERVAL_HOURS=${ARCHIVE_INTERVAL_HOURS:-4}
       - ARCHIVE_START_DATE=${ARCHIVE_START_DATE:-}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
@@ -248,6 +251,44 @@ services:
       - ${DATA_DIR:-./data}/gateway/archives:/app/data/archives
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: always
+    networks:
+      - wesense-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ===========================================================================
+  # Iroh Sidecar — Distributed Blob Storage for Archives
+  # Profiles: guardian
+  # Rust service wrapping iroh-blobs + iroh-gossip. The gateway POSTs archives
+  # here when STORAGE_BACKEND=iroh. Handles BLAKE3 content-addressed storage
+  # and gossip announcements to other nodes when new archives are available.
+  # ===========================================================================
+  iroh-sidecar:
+    image: ${IROH_SIDECAR_IMAGE:-ghcr.io/wesense-earth/wesense-iroh-sidecar:${IMAGE_TAG:-latest}}
+    container_name: wesense-iroh-sidecar
+    profiles: ["contributor", "station", "guardian"]
+    user: "${PUID:-1000}:${PGID:-1000}"
+    depends_on:
+      config-check:
+        condition: service_completed_successfully
+    volumes:
+      - ${DATA_DIR:-./data}/iroh-sidecar:/app/data
+    environment:
+      - IROH_SIDECAR_PORT=4002
+      - IROH_DATA_DIR=/app/data
+      - IROH_GOSSIP_TOPIC=${IROH_GOSSIP_TOPIC:-wesense-archives}
+      - RUST_LOG=${RUST_LOG:-wesense_iroh_sidecar=info}
+      - TZ=${TZ:-Pacific/Auckland}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4002/status || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3

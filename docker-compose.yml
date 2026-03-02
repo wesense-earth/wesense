@@ -218,6 +218,7 @@ services:
     image: ${GATEWAY_IMAGE:-ghcr.io/wesense-earth/wesense-gateway:${IMAGE_TAG:-latest}}
     container_name: wesense-gateway
     profiles: ["contributor", "station", "guardian"]
+    user: "${PUID:-1000}:${PGID:-1000}"
     depends_on:
       config-check:
         condition: service_completed_successfully
@@ -272,6 +273,7 @@ services:
     image: ${INGESTER_MESHTASTIC_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-meshtastic:${IMAGE_TAG:-latest}}
     container_name: wesense-ingester-meshtastic
     profiles: ["contributor", "station"]
+    user: "${PUID:-1000}:${PGID:-1000}"
     deploy:
       replicas: ${INGESTER_MESHTASTIC:-1}
     depends_on:
@@ -361,6 +363,7 @@ services:
     image: ${INGESTER_MESHTASTIC_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-meshtastic:${IMAGE_TAG:-latest}}
     container_name: wesense-meshtastic-downlink
     profiles: ["downlink"]
+    user: "${PUID:-1000}:${PGID:-1000}"
     depends_on:
       config-check:
         condition: service_completed_successfully
@@ -438,6 +441,7 @@ services:
     image: ${INGESTER_WESENSE_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-wesense:${IMAGE_TAG:-latest}}
     container_name: wesense-ingester-wesense
     profiles: ["contributor", "station"]
+    user: "${PUID:-1000}:${PGID:-1000}"
     deploy:
       replicas: ${INGESTER_WESENSE:-1}
     depends_on:
@@ -529,6 +533,7 @@ services:
     image: ${INGESTER_HA_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-homeassistant:${IMAGE_TAG:-latest}}
     container_name: wesense-ingester-homeassistant
     profiles: ["contributor", "station"]
+    user: "${PUID:-1000}:${PGID:-1000}"
     deploy:
       replicas: ${INGESTER_HOMEASSISTANT:-1}
     depends_on:
@@ -575,6 +580,7 @@ services:
     image: ${RESPIRO_IMAGE:-ghcr.io/wesense-earth/wesense-respiro:${IMAGE_TAG:-latest}}
     container_name: wesense-respiro
     profiles: ["station", "observer"]
+    user: "${PUID:-1000}:${PGID:-1000}"
     ports:
       - "${PORT_RESPIRO:-3001}:3000"
     volumes:
@@ -645,6 +651,7 @@ services:
     image: ${CLASSIFIER_IMAGE:-ghcr.io/wesense-earth/wesense-deployment-classifier:${IMAGE_TAG:-latest}}
     container_name: wesense-deployment-classifier
     profiles: ["station"]
+    user: "${PUID:-1000}:${PGID:-1000}"
     depends_on:
       config-check:
         condition: service_completed_successfully
@@ -728,6 +735,7 @@ services:
     image: ${ORBITDB_IMAGE:-ghcr.io/wesense-earth/wesense-orbitdb:${IMAGE_TAG:-latest}}
     container_name: wesense-orbitdb
     profiles: ["station", "observer", "bootstrap", "guardian"]
+    user: "${PUID:-1000}:${PGID:-1000}"
     # Host networking is required for libp2p peer discovery:
     #   - LAN: mDNS multicast needs the real network interface (Docker bridge isolates it)
     #   - WAN: DHT provider records need a routable address
@@ -760,6 +768,7 @@ services:
     image: ${ZENOH_BRIDGE_IMAGE:-ghcr.io/wesense-earth/wesense-zenoh-bridge:${IMAGE_TAG:-latest}}
     container_name: wesense-zenoh-bridge
     profiles: ["station", "observer"]
+    user: "${PUID:-1000}:${PGID:-1000}"
     depends_on:
       config-check:
         condition: service_completed_successfully
@@ -823,6 +832,7 @@ services:
     image: ${ZENOH_API_IMAGE:-ghcr.io/wesense-earth/wesense-zenoh-api:${IMAGE_TAG:-latest}}
     container_name: wesense-zenoh-api
     profiles: ["station", "observer"]
+    user: "${PUID:-1000}:${PGID:-1000}"
     depends_on:
       config-check:
         condition: service_completed_successfully
@@ -861,6 +871,7 @@ services:
     image: ${ARCHIVER_IMAGE:-ghcr.io/wesense-earth/wesense-archiver:${IMAGE_TAG:-latest}}
     container_name: wesense-archiver
     profiles: ["station", "guardian"]
+    user: "${PUID:-1000}:${PGID:-1000}"
     depends_on:
       config-check:
         condition: service_completed_successfully

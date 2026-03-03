@@ -218,7 +218,6 @@ services:
     image: ${GATEWAY_IMAGE:-ghcr.io/wesense-earth/wesense-gateway:${IMAGE_TAG:-latest}}
     container_name: wesense-gateway
     profiles: ["contributor", "station", "guardian"]
-    user: "${PUID:-1000}:${PGID:-1000}"
     depends_on:
       config-check:
         condition: service_completed_successfully
@@ -228,6 +227,8 @@ services:
       iroh-sidecar:
         condition: service_healthy
     environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
       # ClickHouse connection
       - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-clickhouse}
       - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
@@ -275,13 +276,14 @@ services:
     image: ${IROH_SIDECAR_IMAGE:-ghcr.io/wesense-earth/wesense-iroh-sidecar:${IMAGE_TAG:-latest}}
     container_name: wesense-iroh-sidecar
     profiles: ["contributor", "station", "guardian"]
-    user: "${PUID:-1000}:${PGID:-1000}"
     depends_on:
       config-check:
         condition: service_completed_successfully
     volumes:
       - ${DATA_DIR:-./data}/iroh-sidecar:/app/data
     environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
       - IROH_SIDECAR_PORT=4400
       - IROH_DATA_DIR=/app/data
       - IROH_GOSSIP_TOPIC=${IROH_GOSSIP_TOPIC:-wesense-archives}
@@ -314,7 +316,6 @@ services:
     image: ${INGESTER_MESHTASTIC_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-meshtastic:${IMAGE_TAG:-latest}}
     container_name: wesense-ingester-meshtastic
     profiles: ["contributor", "station"]
-    user: "${PUID:-1000}:${PGID:-1000}"
     deploy:
       replicas: ${INGESTER_MESHTASTIC:-1}
     depends_on:
@@ -342,6 +343,8 @@ services:
       - ${DATA_DIR:-./data}/ingester-meshtastic/logs:/app/logs
       - ${DATA_DIR:-./data}/ingester-meshtastic/keys:/app/data/keys
     environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
       # Storage gateway (receives all readings via HTTP)
       - GATEWAY_URL=http://gateway:8080
       # MQTT input (local EMQX where Meshtastic node pushes)
@@ -404,7 +407,6 @@ services:
     image: ${INGESTER_MESHTASTIC_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-meshtastic:${IMAGE_TAG:-latest}}
     container_name: wesense-meshtastic-downlink
     profiles: ["downlink"]
-    user: "${PUID:-1000}:${PGID:-1000}"
     depends_on:
       config-check:
         condition: service_completed_successfully
@@ -431,6 +433,8 @@ services:
       - ./ingester-meshtastic-downlink/config:/app/config:ro
       - ${DATA_DIR:-./data}/ingester-meshtastic-downlink/keys:/app/data/keys
     environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
       - MESHTASTIC_MODE=downlink
       # Storage gateway (receives all readings via HTTP)
       - GATEWAY_URL=http://gateway:8080
@@ -482,7 +486,6 @@ services:
     image: ${INGESTER_WESENSE_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-wesense:${IMAGE_TAG:-latest}}
     container_name: wesense-ingester-wesense
     profiles: ["contributor", "station"]
-    user: "${PUID:-1000}:${PGID:-1000}"
     deploy:
       replicas: ${INGESTER_WESENSE:-1}
     depends_on:
@@ -510,6 +513,8 @@ services:
       - ${DATA_DIR:-./data}/ingester-wesense/logs:/app/logs
       - ${DATA_DIR:-./data}/ingester-wesense/keys:/app/data/keys
     environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
       # Storage gateway (receives all readings via HTTP)
       - GATEWAY_URL=http://gateway:8080
       # MQTT input (subscribe to sensor topics)
@@ -574,7 +579,6 @@ services:
     image: ${INGESTER_HA_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-homeassistant:${IMAGE_TAG:-latest}}
     container_name: wesense-ingester-homeassistant
     profiles: ["contributor", "station"]
-    user: "${PUID:-1000}:${PGID:-1000}"
     deploy:
       replicas: ${INGESTER_HOMEASSISTANT:-1}
     depends_on:
@@ -589,6 +593,8 @@ services:
       - ./ingester-homeassistant/config:/app/config:ro
       - ${DATA_DIR:-./data}/ingester-homeassistant/logs:/app/logs
     environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
       # Storage gateway (receives all readings via HTTP)
       - GATEWAY_URL=http://gateway:8080
       # Home Assistant connection
@@ -621,7 +627,6 @@ services:
     image: ${RESPIRO_IMAGE:-ghcr.io/wesense-earth/wesense-respiro:${IMAGE_TAG:-latest}}
     container_name: wesense-respiro
     profiles: ["station", "observer"]
-    user: "${PUID:-1000}:${PGID:-1000}"
     ports:
       - "${PORT_RESPIRO:-3001}:3000"
     volumes:
@@ -630,6 +635,8 @@ services:
       # Set DOCKER_SOCK=/var/run/docker.sock and DOCKER_STATS_ENABLED=true in .env.
       - ${DOCKER_SOCK:-/dev/null}:/var/run/docker.sock:ro
     environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
       # ClickHouse connection
       - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-clickhouse}
       - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
@@ -692,7 +699,6 @@ services:
     image: ${CLASSIFIER_IMAGE:-ghcr.io/wesense-earth/wesense-deployment-classifier:${IMAGE_TAG:-latest}}
     container_name: wesense-deployment-classifier
     profiles: ["station"]
-    user: "${PUID:-1000}:${PGID:-1000}"
     depends_on:
       config-check:
         condition: service_completed_successfully
@@ -702,6 +708,8 @@ services:
       - ${DATA_DIR:-./data}/deployment-classifier/reports:/app/reports
       - ${DATA_DIR:-./data}/deployment-classifier/logs:/app/logs
     environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
       # ClickHouse connection (includes protocol)
       - CLICKHOUSE_HOST=http://${CLICKHOUSE_HOST:-clickhouse}:${CLICKHOUSE_PORT:-8123}
       - CLICKHOUSE_USER=${CLICKHOUSE_USER:-wesense}
@@ -776,7 +784,6 @@ services:
     image: ${ORBITDB_IMAGE:-ghcr.io/wesense-earth/wesense-orbitdb:${IMAGE_TAG:-latest}}
     container_name: wesense-orbitdb
     profiles: ["station", "observer", "bootstrap", "guardian"]
-    user: "${PUID:-1000}:${PGID:-1000}"
     # Host networking is required for libp2p peer discovery:
     #   - LAN: mDNS multicast needs the real network interface (Docker bridge isolates it)
     #   - WAN: DHT provider records need a routable address
@@ -785,6 +792,8 @@ services:
     volumes:
       - ${DATA_DIR:-./data}/orbitdb:/app/data
     environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
       - PORT=5200
       - LIBP2P_PORT=${PORT_ORBITDB_P2P:-4002}
       - DATA_DIR=/app/data
@@ -809,7 +818,6 @@ services:
     image: ${ZENOH_BRIDGE_IMAGE:-ghcr.io/wesense-earth/wesense-zenoh-bridge:${IMAGE_TAG:-latest}}
     container_name: wesense-zenoh-bridge
     profiles: ["station", "observer"]
-    user: "${PUID:-1000}:${PGID:-1000}"
     depends_on:
       config-check:
         condition: service_completed_successfully
@@ -832,6 +840,8 @@ services:
       - ${DATA_DIR:-./data}/ingester-meshtastic/keys:/app/local-keys/meshtastic:ro
       - ${DATA_DIR:-./data}/ingester-meshtastic-downlink/keys:/app/local-keys/meshtastic-downlink:ro
     environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
       # Zenoh connection (client mode — station: local zenohd, observer: remote router)
       - ZENOH_ENABLED=true
       - ZENOH_MODE=${ZENOH_MODE:-client}
@@ -873,7 +883,6 @@ services:
     image: ${ZENOH_API_IMAGE:-ghcr.io/wesense-earth/wesense-zenoh-api:${IMAGE_TAG:-latest}}
     container_name: wesense-zenoh-api
     profiles: ["station", "observer"]
-    user: "${PUID:-1000}:${PGID:-1000}"
     depends_on:
       config-check:
         condition: service_completed_successfully
@@ -883,6 +892,8 @@ services:
     extra_hosts:
       - "zenohd:host-gateway"
     environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
       # Zenoh connection
       - ZENOH_ENABLED=true
       - ZENOH_MODE=${ZENOH_MODE:-client}
@@ -914,7 +925,6 @@ services:
     image: ${ARCHIVER_IMAGE:-ghcr.io/wesense-earth/wesense-archiver:${IMAGE_TAG:-latest}}
     container_name: wesense-archiver
     profiles: ["station", "guardian"]
-    user: "${PUID:-1000}:${PGID:-1000}"
     depends_on:
       config-check:
         condition: service_completed_successfully
@@ -932,6 +942,8 @@ services:
       - ${DATA_DIR:-./data}/archiver/keys:/app/data/keys
       - ${DATA_DIR:-./data}/archiver/staging:/app/data/staging
     environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
       # ClickHouse connection
       - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-clickhouse}
       - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}

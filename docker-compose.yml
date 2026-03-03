@@ -268,7 +268,7 @@ services:
   # Iroh Sidecar — Distributed Blob Storage for Archives
   # Profiles: guardian
   # Rust service wrapping iroh-blobs + iroh-gossip. The gateway POSTs archives
-  # here when STORAGE_BACKEND=iroh. Handles BLAKE3 content-addressed storage
+  # here. Handles BLAKE3 content-addressed storage
   # and gossip announcements to other nodes when new archives are available.
   # ===========================================================================
   iroh-sidecar:
@@ -894,6 +894,8 @@ services:
       # Logging
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - TZ=${TZ:-Pacific/Auckland}
+    volumes:
+      - ${DATA_DIR:-./data}/zenoh-api/logs:/app/logs
     restart: always
     networks:
       - wesense-net

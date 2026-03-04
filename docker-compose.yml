@@ -7,8 +7,8 @@
 #   hub         - MQTT broker only (production mqtt.wesense.earth)
 #   downlink    - Meshtastic global downlink (add to station, hub operators only)
 #   observer    - Map + ClickHouse, receives data via Zenoh P2P
-#   guardian    - IPFS archiver (ClickHouse + OrbitDB + Archiver)
-#   researcher  - ClickHouse + IPFS (future)
+#   guardian    - Archive guardian (ClickHouse + OrbitDB + Gateway)
+#   researcher  - ClickHouse + archives (future)
 #
 # Quick start:
 #   1. Copy .env.sample to .env
@@ -655,9 +655,6 @@ services:
       - ZENOH_API_URL=${ZENOH_API_URL:-http://zenoh-api:5100}
       # OrbitDB API (optional — enables /api/stats/orbitdb|nodes|trust endpoints)
       - ORBITDB_URL=${ORBITDB_URL:-http://wesense-orbitdb:5200}
-      # DEPRECATED: Kubo/IPFS — remove once Respiro reads archives from gateway
-      - KUBO_API_URL=${KUBO_API_URL:-http://kubo:5001}
-      - IPFS_GATEWAY_URL=${IPFS_GATEWAY_URL:-https://dweb.link}
       # Container resource stats (optional — requires Docker socket mount below)
       - DOCKER_STATS_ENABLED=${DOCKER_STATS_ENABLED:-false}
       - DOCKER_STATS_CONTAINER_PREFIX=${DOCKER_STATS_CONTAINER_PREFIX:-wesense}
@@ -677,10 +674,6 @@ services:
         required: false
       orbitdb:
         condition: service_started
-        required: false
-      # DEPRECATED: remove kubo dependency once Respiro reads archives from gateway
-      kubo:
-        condition: service_healthy
         required: false
     extra_hosts:
       - "wesense-orbitdb:host-gateway"
@@ -732,52 +725,10 @@ services:
         max-file: "5"
 
   # ===========================================================================
-  # DEPRECATED: Kubo — IPFS Node for Archive Storage
-  # Superseded by the storage gateway's built-in archive system (filesystem/iroh).
-  # Remove once gateway archiving is verified end-to-end.
-  # ===========================================================================
-  kubo:
-    image: ipfs/kubo:latest
-    container_name: wesense-kubo
-    profiles: ["station", "guardian"]
-    depends_on:
-      config-check:
-        condition: service_completed_successfully
-    ports:
-      - "${PORT_KUBO_SWARM:-4001}:4001/tcp"
-      - "${PORT_KUBO_SWARM:-4001}:4001/udp"
-    entrypoint: ["/sbin/tini", "--", "/entrypoint-wrapper.sh"]
-    command: ["daemon", "--migrate=true", "--agent-version-suffix=docker"]
-    volumes:
-      - ${DATA_DIR:-./data}/kubo:/data/ipfs
-      - ./kubo/configure.sh:/configure-kubo.sh:ro
-      - ./kubo/init.sh:/container-init.d/001-configure.sh:ro
-      - ./kubo/entrypoint.sh:/entrypoint-wrapper.sh:ro
-    environment:
-      - PUID=${PUID:-1000}
-      - PGID=${PGID:-1000}
-      - ANNOUNCE_ADDRESS=${ANNOUNCE_ADDRESS:-}
-    healthcheck:
-      test: ["CMD", "ipfs", "id"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    restart: always
-    networks:
-      - wesense-net
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "5"
-
-  # ===========================================================================
   # OrbitDB — Distributed Node Registry & Trust Sync
   # Profiles: station, observer
   # Helia (IPFS) + OrbitDB for automated peer discovery and trust list
   # replication. Handles: node registry, trust sync, attestation consensus.
-  # Archive storage has moved to the dedicated Kubo service above.
   # Port 4002 for libp2p peer connections (OrbitDB replication only).
   # HTTP API (5200) is internal to Docker network only.
   # ===========================================================================
@@ -908,72 +859,6 @@ services:
       - TZ=${TZ:-Pacific/Auckland}
     volumes:
       - ${DATA_DIR:-./data}/zenoh-api/logs:/app/logs
-    restart: always
-    networks:
-      - wesense-net
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "5"
-
-  # ===========================================================================
-  # DEPRECATED: WeSense Archiver — IPFS Archive Service
-  # Superseded by the storage gateway's built-in archive scheduler.
-  # Remove once gateway archiving is verified end-to-end.
-  # ===========================================================================
-  archiver:
-    image: ${ARCHIVER_IMAGE:-ghcr.io/wesense-earth/wesense-archiver:${IMAGE_TAG:-latest}}
-    container_name: wesense-archiver
-    profiles: ["station", "guardian"]
-    depends_on:
-      config-check:
-        condition: service_completed_successfully
-      clickhouse:
-        condition: service_healthy
-      kubo:
-        condition: service_healthy
-        required: false
-      orbitdb:
-        condition: service_started
-        required: false
-    extra_hosts:
-      - "wesense-orbitdb:host-gateway"
-    volumes:
-      - ${DATA_DIR:-./data}/archiver/keys:/app/data/keys
-      - ${DATA_DIR:-./data}/archiver/staging:/app/data/staging
-    environment:
-      - PUID=${PUID:-1000}
-      - PGID=${PGID:-1000}
-      # ClickHouse connection
-      - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-clickhouse}
-      - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
-      - CLICKHOUSE_DATABASE=${CLICKHOUSE_DB:-wesense}
-      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-wesense}
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
-      # Archiver signing key
-      - ZENOH_KEY_DIR=/app/data/keys
-      # Trust store (synced from OrbitDB on startup)
-      - TRUST_FILE=/app/data/trust_list.json
-      # Kubo IPFS node (archive storage via MFS API)
-      # ARCHIVER_KUBO_API_URL overrides KUBO_API_URL for the archiver only,
-      # allowing secondary LAN stations to upload archives through an upstream node.
-      - KUBO_API_URL=${ARCHIVER_KUBO_API_URL:-${KUBO_API_URL:-http://kubo:5001}}
-      # OrbitDB — attestation submission (may point to remote primary hub)
-      - ORBITDB_URL=${ARCHIVER_ORBITDB_URL:-${ORBITDB_URL:-http://wesense-orbitdb:5200}}
-      # OrbitDB — trust sync (always local; replicates via libp2p peer sync)
-      - ORBITDB_TRUST_URL=${ORBITDB_URL:-http://wesense-orbitdb:5200}
-      # Staging directory (local to archiver container)
-      - ARCHIVE_STAGING_DIR=/app/data/staging
-      # Schedule — hours between archive cycles (gap-aware, safe to repeat)
-      - ARCHIVE_INTERVAL_HOURS=${ARCHIVE_INTERVAL_HOURS:-4}
-      # Earliest date to archive (empty = use earliest ClickHouse data)
-      - ARCHIVE_START_DATE=${ARCHIVE_START_DATE:-}
-      # Regions — comma-separated country codes, empty = all
-      - ARCHIVE_REGIONS=${ARCHIVE_REGIONS:-}
-      # Logging
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - TZ=${TZ:-Pacific/Auckland}
     restart: always
     networks:
       - wesense-net

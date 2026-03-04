@@ -707,6 +707,7 @@ services:
     volumes:
       - ${DATA_DIR:-./data}/deployment-classifier/reports:/app/reports
       - ${DATA_DIR:-./data}/deployment-classifier/logs:/app/logs
+      - ${DATA_DIR:-./data}/deployment-classifier/data:/app/data
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}

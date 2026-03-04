@@ -405,7 +405,7 @@ services:
   # ===========================================================================
   ingester-meshtastic-downlink:
     image: ${INGESTER_MESHTASTIC_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-meshtastic:${IMAGE_TAG:-latest}}
-    container_name: wesense-meshtastic-downlink
+    container_name: wesense-ingester-meshtastic-downlink
     profiles: ["downlink"]
     depends_on:
       config-check:

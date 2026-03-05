@@ -279,6 +279,13 @@ services:
     depends_on:
       config-check:
         condition: service_completed_successfully
+      orbitdb:
+        condition: service_started
+        required: false
+    ports:
+      - "${PORT_IROH_QUIC:-4401}:4401/udp"
+    extra_hosts:
+      - "wesense-orbitdb:host-gateway"
     volumes:
       - ${DATA_DIR:-./data}/iroh-sidecar:/app/data
     environment:
@@ -287,6 +294,13 @@ services:
       - IROH_SIDECAR_PORT=4400
       - IROH_DATA_DIR=/app/data
       - IROH_GOSSIP_TOPIC=${IROH_GOSSIP_TOPIC:-wesense-archives}
+      - IROH_QUIC_PORT=${PORT_IROH_QUIC:-4401}
+      - IROH_STORE_SCOPE=${IROH_STORE_SCOPE:-}
+      - IROH_BOOTSTRAP_PEERS=${IROH_BOOTSTRAP_PEERS:-}
+      - IROH_RECONCILE_INTERVAL=${IROH_RECONCILE_INTERVAL:-900}
+      - IROH_RELAY_URLS=${IROH_RELAY_URLS:-}
+      - ORBITDB_URL=${ORBITDB_URL:-http://wesense-orbitdb:5200}
+      - ANNOUNCE_ADDRESS=${ANNOUNCE_ADDRESS:-}
       - RUST_LOG=${RUST_LOG:-wesense_iroh_sidecar=info}
       - TZ=${TZ:-Pacific/Auckland}
     healthcheck:
@@ -655,6 +669,8 @@ services:
       - ZENOH_API_URL=${ZENOH_API_URL:-http://zenoh-api:5100}
       # OrbitDB API (optional — enables /api/stats/orbitdb|nodes|trust endpoints)
       - ORBITDB_URL=${ORBITDB_URL:-http://wesense-orbitdb:5200}
+      # Iroh Sidecar API (optional — enables /api/stats/iroh endpoint)
+      - IROH_SIDECAR_URL=${IROH_SIDECAR_URL:-http://iroh-sidecar:4400}
       # Container resource stats (optional — requires Docker socket mount below)
       - DOCKER_STATS_ENABLED=${DOCKER_STATS_ENABLED:-false}
       - DOCKER_STATS_CONTAINER_PREFIX=${DOCKER_STATS_CONTAINER_PREFIX:-wesense}

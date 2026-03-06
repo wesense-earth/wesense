@@ -669,8 +669,8 @@ services:
       - ZENOH_API_URL=${ZENOH_API_URL:-http://zenoh-api:5100}
       # OrbitDB API (optional — enables /api/stats/orbitdb|nodes|trust endpoints)
       - ORBITDB_URL=${ORBITDB_URL:-http://wesense-orbitdb:5200}
-      # Gateway API (optional — enables archive stats panel in Stats view)
-      - GATEWAY_URL=${GATEWAY_URL:-http://gateway:8080}
+      # Gateway API (enables archive stats panel in Stats view)
+      - GATEWAY_URL=http://gateway:8080
       # Iroh Sidecar API (optional — enables /api/stats/iroh endpoint)
       - IROH_SIDECAR_URL=${IROH_SIDECAR_URL:-http://iroh-sidecar:4400}
       # Zenoh Bridge API (optional — enables /api/stats/zenoh-bridge endpoint)

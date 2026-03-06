@@ -671,6 +671,8 @@ services:
       - ORBITDB_URL=${ORBITDB_URL:-http://wesense-orbitdb:5200}
       # Iroh Sidecar API (optional — enables /api/stats/iroh endpoint)
       - IROH_SIDECAR_URL=${IROH_SIDECAR_URL:-http://iroh-sidecar:4400}
+      # Zenoh Bridge API (optional — enables /api/stats/zenoh-bridge endpoint)
+      - ZENOH_BRIDGE_URL=${ZENOH_BRIDGE_URL:-http://zenoh-bridge:5300}
       # Container resource stats (optional — requires Docker socket mount below)
       - DOCKER_STATS_ENABLED=${DOCKER_STATS_ENABLED:-false}
       - DOCKER_STATS_CONTAINER_PREFIX=${DOCKER_STATS_CONTAINER_PREFIX:-wesense}
@@ -829,6 +831,8 @@ services:
       - ORBITDB_ENABLED=${ORBITDB_ENABLED:-true}
       - ORBITDB_URL=${ORBITDB_URL:-http://wesense-orbitdb:5200}
       - ORBITDB_SYNC_INTERVAL=${ORBITDB_SYNC_INTERVAL:-3600}
+      # Stats API
+      - BRIDGE_API_PORT=${BRIDGE_API_PORT:-5300}
       # Logging
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - TZ=${TZ:-Pacific/Auckland}

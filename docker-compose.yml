@@ -242,6 +242,8 @@ services:
       - TRUST_FILE=/app/data/trust_list.json
       # Iroh storage
       - IROH_SIDECAR_URL=http://iroh-sidecar:4400
+      # OrbitDB (attestation submission)
+      - ORBITDB_URL=${ORBITDB_URL:-http://wesense-orbitdb:5200}
       # Archive schedule
       - ARCHIVE_INTERVAL_HOURS=${ARCHIVE_INTERVAL_HOURS:-4}
       - ARCHIVE_START_DATE=${ARCHIVE_START_DATE:-}
@@ -257,6 +259,8 @@ services:
       retries: 3
       start_period: 10s
     restart: always
+    extra_hosts:
+      - "wesense-orbitdb:host-gateway"
     networks:
       - wesense-net
     logging:

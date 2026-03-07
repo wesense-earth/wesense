@@ -218,6 +218,11 @@ services:
     image: ${GATEWAY_IMAGE:-ghcr.io/wesense-earth/wesense-gateway:${IMAGE_TAG:-latest}}
     container_name: wesense-gateway
     profiles: ["contributor", "station", "guardian"]
+    deploy:
+      resources:
+        limits:
+          memory: ${GATEWAY_MEM_LIMIT:-1G}
+          cpus: '1'
     depends_on:
       config-check:
         condition: service_completed_successfully
@@ -280,6 +285,11 @@ services:
     image: ${IROH_SIDECAR_IMAGE:-ghcr.io/wesense-earth/wesense-iroh-sidecar:${IMAGE_TAG:-latest}}
     container_name: wesense-iroh-sidecar
     profiles: ["contributor", "station", "guardian"]
+    deploy:
+      resources:
+        limits:
+          memory: ${IROH_SIDECAR_MEM_LIMIT:-2G}
+          cpus: '2'
     depends_on:
       config-check:
         condition: service_completed_successfully
@@ -506,6 +516,10 @@ services:
     profiles: ["contributor", "station"]
     deploy:
       replicas: ${INGESTER_WESENSE:-1}
+      resources:
+        limits:
+          memory: ${INGESTER_WESENSE_MEM_LIMIT:-1G}
+          cpus: '1'
     depends_on:
       config-check:
         condition: service_completed_successfully
@@ -765,6 +779,11 @@ services:
     #   - WAN: DHT provider records need a routable address
     # Other containers reach the HTTP API (port 5200) via extra_hosts: host-gateway.
     network_mode: host
+    deploy:
+      resources:
+        limits:
+          memory: ${ORBITDB_MEM_LIMIT:-2G}
+          cpus: '2'
     volumes:
       - ${DATA_DIR:-./data}/orbitdb:/app/data
     environment:

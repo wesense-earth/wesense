@@ -649,6 +649,59 @@ services:
         max-file: "5"
 
   # ===========================================================================
+  # Government Air Quality Ingester (Reference Stations)
+  # Profile: govaq (opt-in, combine with station or contributor)
+  # Polls government air quality monitoring APIs for reference-grade readings.
+  # Starts with Environment Canterbury (ECan) — 18 stations, 10-minute data.
+  # Configure sources in ingester-govaq/config/sources.json.
+  #
+  # Enable with:  docker compose --profile station --profile govaq up -d
+  # Or in .env:   COMPOSE_PROFILES=station,govaq
+  # ===========================================================================
+  ingester-govaq:
+    image: ${INGESTER_GOVAQ_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-govaq:${IMAGE_TAG:-latest}}
+    container_name: wesense-ingester-govaq
+    profiles: ["govaq"]
+    deploy:
+      replicas: ${INGESTER_GOVAQ:-1}
+    depends_on:
+      config-check:
+        condition: service_completed_successfully
+      gateway:
+        condition: service_healthy
+      emqx:
+        condition: service_healthy
+        required: false
+    volumes:
+      - ./ingester-govaq/config:/app/config:ro
+      - ${DATA_DIR:-./data}/ingester-govaq/cache:/app/cache
+      - ${DATA_DIR:-./data}/ingester-govaq/logs:/app/logs
+      - ${DATA_DIR:-./data}/ingester-govaq/keys:/app/data/keys
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      # Storage gateway (receives all readings via HTTP)
+      - GATEWAY_URL=http://gateway:8080
+      # MQTT output for decoded messages
+      - WESENSE_OUTPUT_BROKER=${MQTT_HOST:-emqx}
+      - WESENSE_OUTPUT_PORT=${MQTT_PORT:-1883}
+      - WESENSE_OUTPUT_USERNAME=${MQTT_USER}
+      - WESENSE_OUTPUT_PASSWORD=${MQTT_PASSWORD}
+      # Polling
+      - GOVAQ_POLL_INTERVAL=${GOVAQ_POLL_INTERVAL:-600}
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - TZ=${TZ:-Pacific/Auckland}
+    restart: always
+    networks:
+      - wesense-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ===========================================================================
   # Respiro - Environmental Sensor Map
   # Profiles: station, observer
   # Web dashboard displaying sensor data from ClickHouse.

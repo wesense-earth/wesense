@@ -247,8 +247,6 @@ services:
       - TRUST_FILE=/app/data/trust_list.json
       # Iroh storage
       - IROH_SIDECAR_URL=http://iroh-sidecar:4400
-      # OrbitDB (attestation submission)
-      - ORBITDB_URL=${ORBITDB_URL:-http://wesense-orbitdb:5200}
       # Archive schedule
       - ARCHIVE_INTERVAL_HOURS=${ARCHIVE_INTERVAL_HOURS:-4}
       - ARCHIVE_START_DATE=${ARCHIVE_START_DATE:-}
@@ -819,7 +817,7 @@ services:
   # OrbitDB — Distributed Node Registry & Trust Sync
   # Profiles: station, observer
   # Helia (IPFS) + OrbitDB for automated peer discovery and trust list
-  # replication. Handles: node registry, trust sync, attestation consensus.
+  # replication. Handles: node registry, trust sync, store scope tracking.
   # Port 4002 for libp2p peer connections (OrbitDB replication only).
   # HTTP API (5200) is internal to Docker network only.
   # ===========================================================================

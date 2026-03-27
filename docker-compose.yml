@@ -647,21 +647,22 @@ services:
         max-file: "5"
 
   # ===========================================================================
-  # Government Air Quality Ingester (Reference Stations)
-  # Profile: govaq (opt-in, combine with station or contributor)
-  # Polls government air quality monitoring APIs for reference-grade readings.
-  # Starts with Environment Canterbury (ECan) — 18 stations, 10-minute data.
-  # Configure sources in ingester-govaq/config/sources.json.
+  # Government Air Quality Ingester — New Zealand (Reference Stations)
+  # Profile: govaq-nz (opt-in, combine with station or contributor)
+  # Polls NZ regional council APIs for reference-grade readings.
+  # Sources: ECan, Tasman, Nelson, Marlborough, Hawke's Bay, Gisborne,
+  #          Horizons, West Coast (via Hilltop API).
+  # Configure sources in ingester-govaq-nz/config/sources.json.
   #
-  # Enable with:  docker compose --profile station --profile govaq up -d
-  # Or in .env:   COMPOSE_PROFILES=station,govaq
+  # Enable with:  docker compose --profile station --profile govaq-nz up -d
+  # Or in .env:   COMPOSE_PROFILES=station,govaq-nz
   # ===========================================================================
-  ingester-govaq:
-    image: ${INGESTER_GOVAQ_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-govaq:${IMAGE_TAG:-latest}}
-    container_name: wesense-ingester-govaq
-    profiles: ["govaq"]
+  ingester-govaq-nz:
+    image: ${INGESTER_GOVAQ_NZ_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-govaq-nz:${IMAGE_TAG:-latest}}
+    container_name: wesense-ingester-govaq-nz
+    profiles: ["govaq-nz"]
     deploy:
-      replicas: ${INGESTER_GOVAQ:-1}
+      replicas: ${INGESTER_GOVAQ_NZ:-1}
     depends_on:
       config-check:
         condition: service_completed_successfully
@@ -671,10 +672,10 @@ services:
         condition: service_healthy
         required: false
     volumes:
-      - ./ingester-govaq/config:/app/config:ro
-      - ${DATA_DIR:-./data}/ingester-govaq/cache:/app/cache
-      - ${DATA_DIR:-./data}/ingester-govaq/logs:/app/logs
-      - ${DATA_DIR:-./data}/ingester-govaq/keys:/app/data/keys
+      - ./ingester-govaq-nz/config:/app/config:ro
+      - ${DATA_DIR:-./data}/ingester-govaq-nz/cache:/app/cache
+      - ${DATA_DIR:-./data}/ingester-govaq-nz/logs:/app/logs
+      - ${DATA_DIR:-./data}/ingester-govaq-nz/keys:/app/data/keys
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}

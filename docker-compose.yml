@@ -287,7 +287,7 @@ services:
       resources:
         limits:
           memory: ${IROH_SIDECAR_MEM_LIMIT:-2G}
-          cpus: '2'
+          cpus: ${IROH_SIDECAR_CPU_LIMIT:-2}
     depends_on:
       config-check:
         condition: service_completed_successfully
@@ -835,7 +835,7 @@ services:
       resources:
         limits:
           memory: ${ORBITDB_MEM_LIMIT:-2G}
-          cpus: '2'
+          cpus: ${ORBITDB_CPU_LIMIT:-2}
     volumes:
       - ${DATA_DIR:-./data}/orbitdb:/app/data
     environment:

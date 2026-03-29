@@ -891,6 +891,10 @@ services:
       - ORBITDB_ENABLED=${ORBITDB_ENABLED:-true}
       - ORBITDB_URL=${ORBITDB_URL:-http://wesense-orbitdb:5200}
       - ORBITDB_SYNC_INTERVAL=${ORBITDB_SYNC_INTERVAL:-3600}
+      # WAN peer discovery (registers zenoh_endpoint in OrbitDB for remote bridges)
+      - ANNOUNCE_ADDRESS=${ANNOUNCE_ADDRESS:-}
+      - ZENOH_LAN_ADDRESS=${ZENOH_LAN_ADDRESS:-}
+      - PORT_ZENOH=${PORT_ZENOH:-7447}
       # Stats API
       - BRIDGE_API_PORT=${BRIDGE_API_PORT:-5300}
       # Logging

@@ -874,8 +874,8 @@ services:
       - MQTT_BRIDGE_ENABLED=${MQTT_BRIDGE_ENABLED:-true}
       - MQTT_BROKER=${MQTT_HOST:-emqx}
       - MQTT_PORT=${MQTT_PORT:-1883}
-      - MQTT_USERNAME=${MQTT_BRIDGE_USER:-}
-      - MQTT_PASSWORD=${MQTT_BRIDGE_PASSWORD:-}
+      - MQTT_USERNAME=${MQTT_USER}
+      - MQTT_PASSWORD=${MQTT_PASSWORD}
       - MQTT_SUBSCRIBE_TOPIC=${MQTT_SUBSCRIBE_TOPIC:-wesense/decoded/#}
       # ClickHouse connection (local database)
       - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-clickhouse}

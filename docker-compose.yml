@@ -201,7 +201,7 @@ services:
     entrypoint: ["/bin/sh", "/proxy-entrypoint.sh"]
     environment:
       - WESENSE_PROXY=${WESENSE_PROXY:-}
-      - PORT_ZENOH=${PORT_ZENOH:-7447}
+      - PORT_ZENOH=${WESENSE_PROXY_ZENOH_PORT:-${PORT_ZENOH:-7447}}
     restart: always
     logging:
       driver: "json-file"
@@ -314,6 +314,7 @@ services:
       - ORBITDB_URL=${ORBITDB_URL:-http://wesense-orbitdb:5200}
       - ANNOUNCE_ADDRESS=${ANNOUNCE_ADDRESS:-}
       - WESENSE_PROXY=${WESENSE_PROXY:-}
+      - WESENSE_PROXY_IROH_PORT=${WESENSE_PROXY_IROH_PORT:-}
       - RUST_LOG=${RUST_LOG:-wesense_iroh_sidecar=info}
       - TZ=${TZ:-Pacific/Auckland}
     healthcheck:

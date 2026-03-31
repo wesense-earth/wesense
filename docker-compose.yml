@@ -7,7 +7,7 @@
 #   hub         - MQTT broker only (production mqtt.wesense.earth)
 #   downlink    - Meshtastic global downlink (add to station, hub operators only)
 #   observer    - Map + ClickHouse, receives data via Zenoh P2P
-#   guardian    - Archive guardian (ClickHouse + OrbitDB + Gateway)
+#   guardian    - Archive guardian (ClickHouse + OrbitDB + Storage Broker)
 #   researcher  - ClickHouse + archives (future)
 #
 # Quick start:
@@ -210,19 +210,19 @@ services:
         max-file: "5"
 
   # ===========================================================================
-  # Storage Gateway — HTTP API for sensor reading ingestion
+  # Storage Broker — HTTP API for sensor reading ingestion
   # Profiles: contributor, station, guardian
   # Receives readings from ingesters via POST /readings, geocodes, deduplicates,
-  # and writes to ClickHouse and Iroh (via iroh-sidecar).
+  # and writes to ClickHouse and Iroh (via archive-replicator).
   # ===========================================================================
-  gateway:
-    image: ${GATEWAY_IMAGE:-ghcr.io/wesense-earth/wesense-gateway:${IMAGE_TAG:-latest}}
-    container_name: wesense-gateway
+  storage-broker:
+    image: ${STORAGE_BROKER_IMAGE:-ghcr.io/wesense-earth/wesense-storage-broker:${IMAGE_TAG:-latest}}
+    container_name: wesense-storage-broker
     profiles: ["contributor", "station", "guardian"]
     deploy:
       resources:
         limits:
-          memory: ${GATEWAY_MEM_LIMIT:-1G}
+          memory: ${STORAGE_BROKER_MEM_LIMIT:-1G}
           cpus: '1'
     depends_on:
       config-check:
@@ -230,7 +230,7 @@ services:
       clickhouse:
         condition: service_healthy
         required: false
-      iroh-sidecar:
+      archive-replicator:
         condition: service_healthy
     environment:
       - PUID=${PUID:-1000}
@@ -247,15 +247,15 @@ services:
       - KEY_DIR=/app/data/keys
       - TRUST_FILE=/app/data/trust_list.json
       # Iroh storage
-      - IROH_SIDECAR_URL=http://iroh-sidecar:4400
+      - ARCHIVE_REPLICATOR_URL=http://archive-replicator:4400
       # Archive schedule
       - ARCHIVE_INTERVAL_HOURS=${ARCHIVE_INTERVAL_HOURS:-4}
       - ARCHIVE_START_DATE=${ARCHIVE_START_DATE:-}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - TZ=${TZ:-Pacific/Auckland}
     volumes:
-      - ${DATA_DIR:-./data}/gateway/keys:/app/data/keys
-      - ${DATA_DIR:-./data}/gateway/archives:/app/data/archives
+      - ${DATA_DIR:-./data}/storage-broker/keys:/app/data/keys
+      - ${DATA_DIR:-./data}/storage-broker/archives:/app/data/archives
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
       interval: 30s
@@ -274,21 +274,21 @@ services:
         max-file: "5"
 
   # ===========================================================================
-  # Iroh Sidecar — Distributed Blob Storage for Archives
+  # Archive Replicator — Distributed Blob Storage for Archives
   # Profiles: guardian
-  # Rust service wrapping iroh-blobs + iroh-gossip. The gateway POSTs archives
+  # Rust service wrapping iroh-blobs + iroh-gossip. The storage broker POSTs archives
   # here. Handles BLAKE3 content-addressed storage
   # and gossip announcements to other nodes when new archives are available.
   # ===========================================================================
-  iroh-sidecar:
-    image: ${IROH_SIDECAR_IMAGE:-ghcr.io/wesense-earth/wesense-iroh-sidecar:${IMAGE_TAG:-latest}}
-    container_name: wesense-iroh-sidecar
+  archive-replicator:
+    image: ${ARCHIVE_REPLICATOR_IMAGE:-ghcr.io/wesense-earth/wesense-archive-replicator:${IMAGE_TAG:-latest}}
+    container_name: wesense-archive-replicator
     profiles: ["contributor", "station", "guardian"]
     deploy:
       resources:
         limits:
-          memory: ${IROH_SIDECAR_MEM_LIMIT:-2G}
-          cpus: ${IROH_SIDECAR_CPU_LIMIT:-2}
+          memory: ${ARCHIVE_REPLICATOR_MEM_LIMIT:-2G}
+          cpus: ${ARCHIVE_REPLICATOR_CPU_LIMIT:-2}
     depends_on:
       config-check:
         condition: service_completed_successfully
@@ -300,7 +300,7 @@ services:
     extra_hosts:
       - "wesense-orbitdb:host-gateway"
     volumes:
-      - ${DATA_DIR:-./data}/iroh-sidecar:/app/data
+      - ${DATA_DIR:-./data}/archive-replicator:/app/data
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
@@ -349,7 +349,7 @@ services:
     depends_on:
       config-check:
         condition: service_completed_successfully
-      gateway:
+      storage-broker:
         condition: service_healthy
       emqx:
         condition: service_healthy
@@ -373,8 +373,8 @@ services:
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
-      # Storage gateway (receives all readings via HTTP)
-      - GATEWAY_URL=http://gateway:8080
+      # Storage broker (receives all readings via HTTP)
+      - GATEWAY_URL=http://storage-broker:8080
       # MQTT input (local EMQX where Meshtastic node pushes)
       - MQTT_BROKER=${MQTT_HOST:-emqx}
       - MQTT_PORT=${MQTT_PORT:-1883}
@@ -429,7 +429,7 @@ services:
     depends_on:
       config-check:
         condition: service_completed_successfully
-      gateway:
+      storage-broker:
         condition: service_healthy
       emqx:
         condition: service_healthy
@@ -455,8 +455,8 @@ services:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
       - MESHTASTIC_MODE=downlink
-      # Storage gateway (receives all readings via HTTP)
-      - GATEWAY_URL=http://gateway:8080
+      # Storage broker (receives all readings via HTTP)
+      - GATEWAY_URL=http://storage-broker:8080
       # ClickHouse connection (read-only, used by ZenohQueryable)
       - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-clickhouse}
       - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
@@ -505,7 +505,7 @@ services:
     depends_on:
       config-check:
         condition: service_completed_successfully
-      gateway:
+      storage-broker:
         condition: service_healthy
       emqx:
         condition: service_healthy
@@ -529,8 +529,8 @@ services:
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
-      # Storage gateway (receives all readings via HTTP)
-      - GATEWAY_URL=http://gateway:8080
+      # Storage broker (receives all readings via HTTP)
+      - GATEWAY_URL=http://storage-broker:8080
       # MQTT input (subscribe to sensor topics)
       - MQTT_BROKER=${MQTT_HOST:-emqx}
       - MQTT_PORT=${MQTT_PORT:-1883}
@@ -589,7 +589,7 @@ services:
     depends_on:
       config-check:
         condition: service_completed_successfully
-      gateway:
+      storage-broker:
         condition: service_healthy
       emqx:
         condition: service_healthy
@@ -600,8 +600,8 @@ services:
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
-      # Storage gateway (receives all readings via HTTP)
-      - GATEWAY_URL=http://gateway:8080
+      # Storage broker (receives all readings via HTTP)
+      - GATEWAY_URL=http://storage-broker:8080
       # Home Assistant connection
       - HA_URL=${HA_URL:-http://homeassistant.local:8123}
       - HA_ACCESS_TOKEN=${HA_ACCESS_TOKEN}
@@ -641,7 +641,7 @@ services:
     depends_on:
       config-check:
         condition: service_completed_successfully
-      gateway:
+      storage-broker:
         condition: service_healthy
       emqx:
         condition: service_healthy
@@ -654,8 +654,8 @@ services:
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
-      # Storage gateway (receives all readings via HTTP)
-      - GATEWAY_URL=http://gateway:8080
+      # Storage broker (receives all readings via HTTP)
+      - GATEWAY_URL=http://storage-broker:8080
       # MQTT output for decoded messages
       - WESENSE_OUTPUT_BROKER=${MQTT_HOST:-emqx}
       - WESENSE_OUTPUT_PORT=${MQTT_PORT:-1883}
@@ -714,12 +714,12 @@ services:
       - ZENOH_API_URL=${ZENOH_API_URL:-http://zenoh-api:5100}
       # OrbitDB API (optional — enables /api/stats/orbitdb|nodes|trust endpoints)
       - ORBITDB_URL=${ORBITDB_URL:-http://wesense-orbitdb:5200}
-      # Gateway API (enables archive stats panel in Stats view)
-      - GATEWAY_URL=http://gateway:8080
-      # Iroh Sidecar API (optional — enables /api/stats/iroh endpoint)
-      - IROH_SIDECAR_URL=${IROH_SIDECAR_URL:-http://iroh-sidecar:4400}
-      # Zenoh Bridge API (optional — enables /api/stats/zenoh-bridge endpoint)
-      - ZENOH_BRIDGE_URL=${ZENOH_BRIDGE_URL:-http://zenoh-bridge:5300}
+      # Storage Broker API (enables archive stats panel in Stats view)
+      - GATEWAY_URL=http://storage-broker:8080
+      # Archive Replicator API (optional — enables /api/stats/iroh endpoint)
+      - ARCHIVE_REPLICATOR_URL=${ARCHIVE_REPLICATOR_URL:-http://archive-replicator:4400}
+      # Live Transport API (optional — enables /api/stats/zenoh-bridge endpoint)
+      - LIVE_TRANSPORT_URL=${LIVE_TRANSPORT_URL:-http://live-transport:5300}
       # Container resource stats (optional — requires Docker socket mount below)
       - DOCKER_STATS_ENABLED=${DOCKER_STATS_ENABLED:-false}
       - DOCKER_STATS_CONTAINER_PREFIX=${DOCKER_STATS_CONTAINER_PREFIX:-wesense}
@@ -830,7 +830,7 @@ services:
         max-file: "5"
 
   # ===========================================================================
-  # Zenoh Bridge — Bidirectional MQTT ↔ Zenoh Bridge
+  # Live Transport — Bidirectional MQTT ↔ Zenoh Bridge
   # Profiles: station, observer
   # Outbound: subscribes to MQTT decoded readings from all local ingesters,
   # signs them, and publishes to the Zenoh P2P network.
@@ -838,9 +838,9 @@ services:
   # This is the single point where MQTT meets Zenoh — ingesters don't need
   # to know about Zenoh at all.
   # ===========================================================================
-  zenoh-bridge:
-    image: ${ZENOH_BRIDGE_IMAGE:-ghcr.io/wesense-earth/wesense-zenoh-bridge:${IMAGE_TAG:-latest}}
-    container_name: wesense-zenoh-bridge
+  live-transport:
+    image: ${LIVE_TRANSPORT_IMAGE:-ghcr.io/wesense-earth/wesense-live-transport:${IMAGE_TAG:-latest}}
+    container_name: wesense-live-transport
     profiles: ["station", "observer"]
     depends_on:
       config-check:
@@ -857,8 +857,8 @@ services:
       - "wesense-orbitdb:host-gateway"
       - "zenohd:host-gateway"
     volumes:
-      - ${DATA_DIR:-./data}/zenoh-bridge/data:/app/data
-      - ${DATA_DIR:-./data}/zenoh-bridge/logs:/app/logs
+      - ${DATA_DIR:-./data}/live-transport/data:/app/data
+      - ${DATA_DIR:-./data}/live-transport/logs:/app/logs
       # Local ingester keys (read-only) — used for self-echo filtering
       - ${DATA_DIR:-./data}/ingester-wesense/keys:/app/local-keys/wesense:ro
       - ${DATA_DIR:-./data}/ingester-meshtastic/keys:/app/local-keys/meshtastic:ro
@@ -899,7 +899,7 @@ services:
       - WESENSE_PROXY=${WESENSE_PROXY:-}
       - PORT_ZENOH=${PORT_ZENOH:-7447}
       # Stats API
-      - BRIDGE_API_PORT=${BRIDGE_API_PORT:-5300}
+      - BRIDGE_API_PORT=${LIVE_TRANSPORT_API_PORT:-5300}
       # Logging
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - TZ=${TZ:-Pacific/Auckland}

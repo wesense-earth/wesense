@@ -315,7 +315,7 @@ services:
       - ANNOUNCE_ADDRESS=${ANNOUNCE_ADDRESS:-}
       - WESENSE_PROXY=${WESENSE_PROXY:-}
       - WESENSE_PROXY_IROH_PORT=${WESENSE_PROXY_IROH_PORT:-}
-      - RUST_LOG=${RUST_LOG:-wesense_iroh_sidecar=info}
+      - RUST_LOG=${RUST_LOG:-wesense_archive_replicator=info}
       - TZ=${TZ:-Pacific/Auckland}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:4400/status || exit 1"]

@@ -253,6 +253,8 @@ services:
       - ARCHIVE_START_DATE=${ARCHIVE_START_DATE:-}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - TZ=${TZ:-Pacific/Auckland}
+    extra_hosts:
+      - "archive-replicator:host-gateway"
     volumes:
       - ${DATA_DIR:-./data}/storage-broker/keys:/app/data/keys
       - ${DATA_DIR:-./data}/storage-broker/archives:/app/data/archives
@@ -284,6 +286,10 @@ services:
     image: ${ARCHIVE_REPLICATOR_IMAGE:-ghcr.io/wesense-earth/wesense-archive-replicator:${IMAGE_TAG:-latest}}
     container_name: wesense-archive-replicator
     profiles: ["contributor", "station", "guardian"]
+    # Host networking enables mDNS multicast for automatic LAN peer discovery.
+    # Archive replicators on the same LAN find each other directly without OrbitDB.
+    # Other containers reach the HTTP API (port 4400) via extra_hosts: host-gateway.
+    network_mode: host
     deploy:
       resources:
         limits:
@@ -295,10 +301,6 @@ services:
       orbitdb:
         condition: service_started
         required: false
-    ports:
-      - "${PORT_IROH_QUIC:-4401}:4401/udp"
-    extra_hosts:
-      - "wesense-orbitdb:host-gateway"
     volumes:
       - ${DATA_DIR:-./data}/archive-replicator:/app/data
     environment:
@@ -311,7 +313,7 @@ services:
       - IROH_STORE_SCOPE=${IROH_STORE_SCOPE:-*/*}
       - IROH_BOOTSTRAP_PEERS=${IROH_BOOTSTRAP_PEERS:-}
       - IROH_RELAY_URLS=${IROH_RELAY_URLS:-}
-      - ORBITDB_URL=${ORBITDB_URL:-http://wesense-orbitdb:5200}
+      - ORBITDB_URL=http://localhost:5200
       - ANNOUNCE_ADDRESS=${ANNOUNCE_ADDRESS:-}
       - WESENSE_PROXY=${WESENSE_PROXY:-}
       - WESENSE_PROXY_IROH_PORT=${WESENSE_PROXY_IROH_PORT:-}
@@ -324,8 +326,6 @@ services:
       retries: 3
       start_period: 10s
     restart: always
-    networks:
-      - wesense-net
     logging:
       driver: "json-file"
       options:
@@ -742,6 +742,7 @@ services:
         required: false
     extra_hosts:
       - "wesense-orbitdb:host-gateway"
+      - "archive-replicator:host-gateway"
     restart: always
     networks:
       - wesense-net

@@ -254,6 +254,7 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - TZ=${TZ:-Pacific/Auckland}
     extra_hosts:
+      - "wesense-orbitdb:host-gateway"
       - "archive-replicator:host-gateway"
     volumes:
       - ${DATA_DIR:-./data}/storage-broker/keys:/app/data/keys
@@ -265,8 +266,6 @@ services:
       retries: 3
       start_period: 10s
     restart: always
-    extra_hosts:
-      - "wesense-orbitdb:host-gateway"
     networks:
       - wesense-net
     logging:

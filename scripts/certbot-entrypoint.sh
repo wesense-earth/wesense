@@ -36,7 +36,7 @@ EOF
 chmod 600 /etc/cloudflare.ini
 
 # Build certbot args
-CERTBOT_ARGS="certonly --dns-cloudflare --dns-cloudflare-credentials /etc/cloudflare.ini -d ${TLS_DOMAIN} --non-interactive --agree-tos"
+CERTBOT_ARGS="certonly --dns-cloudflare --dns-cloudflare-credentials /etc/cloudflare.ini -d ${TLS_DOMAIN} --key-type rsa --non-interactive --agree-tos"
 
 if [ -n "$CERTBOT_EMAIL" ]; then
     CERTBOT_ARGS="$CERTBOT_ARGS --email ${CERTBOT_EMAIL}"
@@ -49,12 +49,23 @@ if [ "$CERTBOT_STAGING" = "true" ]; then
     echo "Using Let's Encrypt STAGING environment (certs won't be trusted)"
 fi
 
-# Obtain cert if we don't have one yet
+# Obtain cert if we don't have one, or re-obtain if the existing cert
+# uses the wrong key type (e.g. ECDSA instead of RSA).
+NEED_CERT=false
 if [ ! -f "${CERT_DIR}/fullchain.pem" ]; then
+    echo "No certificate found for ${TLS_DOMAIN}"
+    NEED_CERT=true
+elif ! openssl x509 -in "${CERT_DIR}/fullchain.pem" -noout -text 2>/dev/null | grep -q "rsaEncryption"; then
+    echo "Existing certificate uses non-RSA key type — re-obtaining as RSA..."
+    CERTBOT_ARGS="$CERTBOT_ARGS --force-renewal"
+    NEED_CERT=true
+else
+    echo "Certificate already exists for ${TLS_DOMAIN} (RSA, valid)"
+fi
+
+if [ "$NEED_CERT" = true ]; then
     echo "Obtaining certificate for ${TLS_DOMAIN}..."
     certbot $CERTBOT_ARGS
-else
-    echo "Certificate already exists for ${TLS_DOMAIN}"
 fi
 
 # Copy certs to shared volume (EMQX reads from here)

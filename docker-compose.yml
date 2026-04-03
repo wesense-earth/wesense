@@ -98,10 +98,12 @@ services:
     command: ["/opt/emqx/bin/emqx", "foreground"]
     ports:
       - "${PORT_MQTT:-1883}:1883"
+      - "${PORT_MQTT_TLS:-8883}:8883"
+      - "${PORT_MQTT_WSS:-8084}:8084"
     volumes:
       - ${DATA_DIR:-./data}/emqx/data:/opt/emqx/data
       - ${DATA_DIR:-./data}/emqx/log:/opt/emqx/log
-      - ./certs:/opt/emqx/etc/certs:ro
+      - ${TLS_CERT_DIR:-./certs}:/opt/emqx/etc/certs:ro
       - ./emqx/etc/emqx.conf:/opt/emqx/etc/emqx.conf:ro
       - ./emqx/scripts/init-auth.sh:/opt/emqx/scripts/init-auth.sh:ro
     environment:
@@ -116,11 +118,7 @@ services:
       - EMQX_DASHBOARD__DEFAULT_PASSWORD=${EMQX_DASHBOARD_PASSWORD:-public}
       # TLS listeners (disabled by default, enable in .env with certificates)
       - EMQX_LISTENERS__SSL__DEFAULT__ENABLED=${TLS_MQTT_ENABLED:-false}
-      - EMQX_LISTENERS__SSL__DEFAULT__SSL_OPTIONS__CERTFILE=${TLS_CERTFILE:-/opt/emqx/etc/certs/fullchain.pem}
-      - EMQX_LISTENERS__SSL__DEFAULT__SSL_OPTIONS__KEYFILE=${TLS_KEYFILE:-/opt/emqx/etc/certs/privkey.pem}
       - EMQX_LISTENERS__WSS__DEFAULT__ENABLED=${TLS_WS_ENABLED:-false}
-      - EMQX_LISTENERS__WSS__DEFAULT__SSL_OPTIONS__CERTFILE=${TLS_CERTFILE:-/opt/emqx/etc/certs/fullchain.pem}
-      - EMQX_LISTENERS__WSS__DEFAULT__SSL_OPTIONS__KEYFILE=${TLS_KEYFILE:-/opt/emqx/etc/certs/privkey.pem}
       - TZ=${TZ:-Pacific/Auckland}
     healthcheck:
       test: ["CMD", "emqx", "ctl", "status"]

@@ -16,7 +16,7 @@
 set -e
 
 CERT_DIR="/etc/letsencrypt/live/${TLS_DOMAIN}"
-OUTPUT_DIR="/certs"
+OUTPUT_DIR="/certs/mqtt"
 
 if [ -z "$TLS_DOMAIN" ]; then
     echo "ERROR: TLS_DOMAIN not set"
@@ -73,6 +73,7 @@ fi
 # Copy certs to shared volume (EMQX reads from here)
 copy_certs() {
     if [ -f "${CERT_DIR}/fullchain.pem" ] && [ -f "${CERT_DIR}/privkey.pem" ]; then
+        mkdir -p "${OUTPUT_DIR}"
         cp -L "${CERT_DIR}/fullchain.pem" "${OUTPUT_DIR}/fullchain.pem"
         cp -L "${CERT_DIR}/privkey.pem" "${OUTPUT_DIR}/privkey.pem"
         # Public cert is world-readable, private key is owner+group only.

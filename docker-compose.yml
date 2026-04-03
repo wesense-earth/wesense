@@ -106,7 +106,7 @@ services:
     volumes:
       - ${DATA_DIR:-./data}/emqx/data:/opt/emqx/data
       - ${DATA_DIR:-./data}/emqx/log:/opt/emqx/log
-      - ${DATA_DIR:-./data}/certs:/opt/emqx/etc/certs:ro
+      - ${DATA_DIR:-./data}/certs/mqtt:/opt/emqx/etc/certs:ro
       - ./emqx/etc/emqx.conf:/opt/emqx/etc/emqx.conf:ro
       - ./emqx/scripts/init-auth.sh:/opt/emqx/scripts/init-auth.sh:ro
     environment:

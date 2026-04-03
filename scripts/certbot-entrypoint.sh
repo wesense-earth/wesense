@@ -62,9 +62,12 @@ copy_certs() {
     if [ -f "${CERT_DIR}/fullchain.pem" ] && [ -f "${CERT_DIR}/privkey.pem" ]; then
         cp -L "${CERT_DIR}/fullchain.pem" "${OUTPUT_DIR}/fullchain.pem"
         cp -L "${CERT_DIR}/privkey.pem" "${OUTPUT_DIR}/privkey.pem"
+        # Public cert is world-readable, private key is owner+group only.
+        # Ownership set to EMQX's runtime user so it can read after privilege drop.
+        chown "${CERT_OWNER:-1000}:${CERT_OWNER:-1000}" "${OUTPUT_DIR}/fullchain.pem" "${OUTPUT_DIR}/privkey.pem"
         chmod 644 "${OUTPUT_DIR}/fullchain.pem"
         chmod 640 "${OUTPUT_DIR}/privkey.pem"
-        echo "Certs copied to ${OUTPUT_DIR}/"
+        echo "Certs copied to ${OUTPUT_DIR}/ (owner=${CERT_OWNER:-1000})"
 
         # Reload EMQX if it's running (may fail on first start, that's OK)
         if command -v docker >/dev/null 2>&1; then

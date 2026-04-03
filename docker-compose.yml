@@ -154,6 +154,7 @@ services:
       - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN:-}
       - CERTBOT_EMAIL=${CERTBOT_EMAIL:-}
       - CERTBOT_STAGING=${CERTBOT_STAGING:-false}
+      - CERT_OWNER=${PUID:-1000}
     restart: always
 
   # ===========================================================================

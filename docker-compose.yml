@@ -177,12 +177,15 @@ services:
     depends_on:
       config-check:
         condition: service_completed_successfully
+    entrypoint: /scripts/init-tls.sh
     # Set CLICKHOUSE_DATA_DIR in .env to store sensor data on a separate drive (e.g., HDD)
     # Defaults to DATA_DIR/clickhouse alongside other services
     volumes:
       - ${CLICKHOUSE_DATA_DIR:-${DATA_DIR:-./data}/clickhouse}/data:/var/lib/clickhouse
       - ${CLICKHOUSE_DATA_DIR:-${DATA_DIR:-./data}/clickhouse}/logs:/var/log/clickhouse-server
       - ./clickhouse/init:/docker-entrypoint-initdb.d:ro
+      - ./clickhouse/scripts/init-tls.sh:/scripts/init-tls.sh:ro
+      - ${DATA_DIR:-./data}/certs:/etc/clickhouse-server/certs:ro
     environment:
       - CLICKHOUSE_DB=${CLICKHOUSE_DB:-wesense}
       # Admin user — used by Docker image for init scripts and management
@@ -192,6 +195,7 @@ services:
       # App user — created by 00-create-app-user.sh on first start
       - CLICKHOUSE_APP_USER=${CLICKHOUSE_USER:-wesense}
       - CLICKHOUSE_APP_PASSWORD=${CLICKHOUSE_PASSWORD}
+      - TLS_ENABLED=${TLS_ENABLED:-false}
       - TZ=${TZ:-Pacific/Auckland}
     cap_add:
       - SYS_NICE            # Suppresses "get_mempolicy: Operation not permitted" NUMA warnings
@@ -281,6 +285,11 @@ services:
       # Archive schedule
       - ARCHIVE_INTERVAL_HOURS=${ARCHIVE_INTERVAL_HOURS:-4}
       - ARCHIVE_START_DATE=${ARCHIVE_START_DATE:-}
+      # Internal TLS
+      - TLS_ENABLED=${TLS_ENABLED:-false}
+      - TLS_CERTFILE=/app/certs/fullchain.pem
+      - TLS_KEYFILE=/app/certs/privkey.pem
+      - TLS_CA_CERTFILE=/app/certs/ca.pem
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - TZ=${TZ:-Pacific/Auckland}
     extra_hosts:
@@ -289,6 +298,7 @@ services:
     volumes:
       - ${DATA_DIR:-./data}/storage-broker/keys:/app/data/keys
       - ${DATA_DIR:-./data}/storage-broker/archives:/app/data/archives
+      - ${DATA_DIR:-./data}/certs:/app/certs:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
       interval: 30s
@@ -347,6 +357,9 @@ services:
       - WESENSE_PROXY=${WESENSE_PROXY:-}
       - WESENSE_PROXY_IROH_PORT=${WESENSE_PROXY_IROH_PORT:-}
       - RUST_LOG=${RUST_LOG:-wesense_archive_replicator=info}
+      - TLS_ENABLED=${TLS_ENABLED:-false}
+      - TLS_CERTFILE=${DATA_DIR:-./data}/certs/fullchain.pem
+      - TLS_KEYFILE=${DATA_DIR:-./data}/certs/privkey.pem
       - TZ=${TZ:-Pacific/Auckland}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:4400/status || exit 1"]
@@ -399,6 +412,7 @@ services:
       - ${DATA_DIR:-./data}/ingester-meshtastic/cache:/app/cache
       - ${DATA_DIR:-./data}/ingester-meshtastic/logs:/app/logs
       - ${DATA_DIR:-./data}/ingester-meshtastic/keys:/app/data/keys
+      - ${DATA_DIR:-./data}/certs:/app/certs:ro
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
@@ -428,6 +442,9 @@ services:
       # Logging
       - DEBUG=${DEBUG:-false}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # Internal TLS
+      - TLS_ENABLED=${TLS_ENABLED:-false}
+      - TLS_CA_CERTFILE=/app/certs/ca.pem
       - TZ=${TZ:-Pacific/Auckland}
     restart: always
     networks:
@@ -480,6 +497,7 @@ services:
       - ${DATA_DIR:-./data}/ingester-meshtastic-downlink/logs:/app/logs
       - ./ingester-meshtastic-downlink/config:/app/config:ro
       - ${DATA_DIR:-./data}/ingester-meshtastic-downlink/keys:/app/data/keys
+      - ${DATA_DIR:-./data}/certs:/app/certs:ro
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
@@ -505,6 +523,9 @@ services:
       # Logging
       - DEBUG=${DEBUG:-false}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # Internal TLS
+      - TLS_ENABLED=${TLS_ENABLED:-false}
+      - TLS_CA_CERTFILE=/app/certs/ca.pem
       - TZ=${TZ:-Pacific/Auckland}
     restart: always
     networks:
@@ -555,6 +576,7 @@ services:
       - ${DATA_DIR:-./data}/ingester-wesense/cache:/app/cache
       - ${DATA_DIR:-./data}/ingester-wesense/logs:/app/logs
       - ${DATA_DIR:-./data}/ingester-wesense/keys:/app/data/keys
+      - ${DATA_DIR:-./data}/certs:/app/certs:ro
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
@@ -586,6 +608,9 @@ services:
       - TTN_WEBHOOK_PORT=${TTN_WEBHOOK_PORT:-5000}
       # Logging
       - DEBUG=${DEBUG:-false}
+      # Internal TLS
+      - TLS_ENABLED=${TLS_ENABLED:-false}
+      - TLS_CA_CERTFILE=/app/certs/ca.pem
       - TZ=${TZ:-Pacific/Auckland}
     # TTN webhook port — uncomment if receiving The Things Network uplinks
     # directly (not needed if using cloudflared tunnel or similar)
@@ -626,6 +651,7 @@ services:
     volumes:
       - ./ingester-homeassistant/config:/app/config:ro
       - ${DATA_DIR:-./data}/ingester-homeassistant/logs:/app/logs
+      - ${DATA_DIR:-./data}/certs:/app/certs:ro
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
@@ -640,6 +666,9 @@ services:
       - LOCAL_MQTT_PORT=${MQTT_PORT:-1883}
       # Options
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # Internal TLS
+      - TLS_ENABLED=${TLS_ENABLED:-false}
+      - TLS_CA_CERTFILE=/app/certs/ca.pem
       - TZ=${TZ:-Pacific/Auckland}
     restart: always
     networks:
@@ -680,6 +709,7 @@ services:
       - ${DATA_DIR:-./data}/ingester-govaq-nz/cache:/app/cache
       - ${DATA_DIR:-./data}/ingester-govaq-nz/logs:/app/logs
       - ${DATA_DIR:-./data}/ingester-govaq-nz/keys:/app/data/keys
+      - ${DATA_DIR:-./data}/certs:/app/certs:ro
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
@@ -694,6 +724,9 @@ services:
       - GOVAQ_POLL_INTERVAL=${GOVAQ_POLL_INTERVAL:-600}
       # Logging
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # Internal TLS
+      - TLS_ENABLED=${TLS_ENABLED:-false}
+      - TLS_CA_CERTFILE=/app/certs/ca.pem
       - TZ=${TZ:-Pacific/Auckland}
     restart: always
     networks:
@@ -722,6 +755,7 @@ services:
       # Docker socket for container resource stats on the Stats dashboard.
       # Set DOCKER_SOCK=/var/run/docker.sock and DOCKER_STATS_ENABLED=true in .env.
       - ${DOCKER_SOCK:-/dev/null}:/var/run/docker.sock:ro
+      - ${DATA_DIR:-./data}/certs:/app/certs:ro
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
@@ -757,6 +791,10 @@ services:
       # - MAP_CENTER_LAT=${MAP_CENTER_LAT:--36.848}
       # - MAP_CENTER_LNG=${MAP_CENTER_LNG:-174.763}
       # - MAP_ZOOM_LEVEL=${MAP_ZOOM_LEVEL:-10}
+      # Internal TLS
+      - TLS_ENABLED=${TLS_ENABLED:-false}
+      - TLS_CA_CERTFILE=/app/certs/ca.pem
+      - NODE_EXTRA_CA_CERTS=/app/certs/ca.pem
       - TZ=${TZ:-Pacific/Auckland}
     depends_on:
       config-check:
@@ -843,6 +881,7 @@ services:
           cpus: ${ORBITDB_CPU_LIMIT:-2}
     volumes:
       - ${DATA_DIR:-./data}/orbitdb:/app/data
+      - ${DATA_DIR:-./data}/certs:/app/certs:ro
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
@@ -851,6 +890,11 @@ services:
       - DATA_DIR=/app/data
       - ANNOUNCE_ADDRESS=${ANNOUNCE_ADDRESS:-}
       - ORBITDB_BOOTSTRAP_PEERS=${ORBITDB_BOOTSTRAP_PEERS:-bootstrap.wesense.earth}
+      # Internal TLS
+      - TLS_ENABLED=${TLS_ENABLED:-false}
+      - TLS_CERTFILE=/app/certs/fullchain.pem
+      - TLS_KEYFILE=/app/certs/privkey.pem
+      - TLS_CA_CERTFILE=/app/certs/ca.pem
       - TZ=${TZ:-Pacific/Auckland}
     restart: always
     logging:
@@ -893,6 +937,7 @@ services:
       - ${DATA_DIR:-./data}/ingester-wesense/keys:/app/local-keys/wesense:ro
       - ${DATA_DIR:-./data}/ingester-meshtastic/keys:/app/local-keys/meshtastic:ro
       - ${DATA_DIR:-./data}/ingester-meshtastic-downlink/keys:/app/local-keys/meshtastic-downlink:ro
+      - ${DATA_DIR:-./data}/certs:/app/certs:ro
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
@@ -932,6 +977,11 @@ services:
       - BRIDGE_API_PORT=${LIVE_TRANSPORT_API_PORT:-5300}
       # Logging
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # Internal TLS
+      - TLS_ENABLED=${TLS_ENABLED:-false}
+      - TLS_CERTFILE=/app/certs/fullchain.pem
+      - TLS_KEYFILE=/app/certs/privkey.pem
+      - TLS_CA_CERTFILE=/app/certs/ca.pem
       - TZ=${TZ:-Pacific/Auckland}
     restart: always
     networks:
@@ -973,9 +1023,13 @@ services:
       - FLASK_PORT=5100
       # Logging
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # Internal TLS
+      - TLS_ENABLED=${TLS_ENABLED:-false}
+      - TLS_CA_CERTFILE=/app/certs/ca.pem
       - TZ=${TZ:-Pacific/Auckland}
     volumes:
       - ${DATA_DIR:-./data}/zenoh-api/logs:/app/logs
+      - ${DATA_DIR:-./data}/certs:/app/certs:ro
     restart: always
     networks:
       - wesense-net

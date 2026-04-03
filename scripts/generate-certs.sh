@@ -27,9 +27,16 @@ CERT_DIR="${1:-${DATA_DIR:-./data}/certs}"
 CA_DAYS=3650       # 10 years for CA
 CERT_DAYS=825      # ~2.25 years for service certs (Apple max)
 
+# Read PUID from .env for cert ownership
+PUID="${PUID:-1000}"
+if [ -f .env ]; then
+    PUID=$(grep -E '^PUID=' .env | cut -d= -f2 | tr -d '"' || echo "1000")
+fi
+
 # Service names that appear as SANs in the service cert.
-# Includes Docker DNS names and localhost for internal connections.
-SANS="DNS:emqx,DNS:clickhouse,DNS:storage-broker,DNS:archive-replicator,DNS:orbitdb,DNS:respiro,DNS:localhost,IP:127.0.0.1"
+# Includes Docker DNS names, localhost, and common host-gateway addresses
+# for services on network_mode: host (archive-replicator, orbitdb).
+SANS="DNS:emqx,DNS:clickhouse,DNS:storage-broker,DNS:archive-replicator,DNS:orbitdb,DNS:respiro,DNS:live-transport,DNS:zenoh-api,DNS:localhost,IP:127.0.0.1,IP:172.17.0.1"
 
 mkdir -p "$CERT_DIR"
 
@@ -98,13 +105,13 @@ echo "  privkey.pem    — Service private key"
 echo "  ca.pem         — CA cert (flash to ESP32 devices for MQTTS)"
 echo "  ca-key.pem     — CA private key (keep secure!)"
 echo ""
-echo "To enable TLS, set in .env:"
-echo "  TLS_MQTT_ENABLED=true"
-echo "  TLS_WS_ENABLED=true"
+echo "To enable internal TLS, set in .env:"
+echo "  TLS_ENABLED=true"
 echo ""
 echo "To renew service certs later (same CA, no ESP32 update needed):"
 echo "  $0 --renew"
 
-# Set restrictive permissions
-chmod 600 "$CERT_DIR/ca-key.pem" "$CERT_DIR/privkey.pem"
-chmod 644 "$CERT_DIR/ca.pem" "$CERT_DIR/fullchain.pem"
+# Set ownership to PUID so services can read after privilege drop
+chown "${PUID}:${PUID}" "$CERT_DIR/fullchain.pem" "$CERT_DIR/privkey.pem" "$CERT_DIR/ca.pem" 2>/dev/null || true
+chmod 640 "$CERT_DIR/ca-key.pem" "$CERT_DIR/privkey.pem"
+chmod 644 "$CERT_DIR/ca.pem" "$CERT_DIR/fullchain.pem" "$CERT_DIR/cert.pem"

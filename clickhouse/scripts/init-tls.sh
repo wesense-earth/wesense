@@ -6,10 +6,12 @@
 CERT_DIR="/etc/clickhouse-server/certs"
 CONFIG_DIR="/etc/clickhouse-server/config.d"
 
-if [ "${TLS_ENABLED}" = "true" ] && [ -f "${CERT_DIR}/fullchain.pem" ] && [ -f "${CERT_DIR}/privkey.pem" ]; then
+if [ "${TLS_ENABLED}" = "true" ] && [ -f "${CERT_DIR}/fullchain.pem" ] && [ -f "${CERT_DIR}/privkey-clickhouse.pem" ]; then
     mkdir -p "${CONFIG_DIR}"
     cat > "${CONFIG_DIR}/tls.xml" << 'EOF'
 <clickhouse>
+    <!-- HTTPS replaces HTTP when TLS_ENABLED=true -->
+    <http_port remove="remove"/>
     <https_port>8443</https_port>
     <openSSL>
         <server>
@@ -23,7 +25,7 @@ if [ "${TLS_ENABLED}" = "true" ] && [ -f "${CERT_DIR}/fullchain.pem" ] && [ -f "
     </openSSL>
 </clickhouse>
 EOF
-    echo "ClickHouse TLS enabled (HTTPS on 8443)"
+    echo "ClickHouse TLS enabled (HTTPS on 8443, HTTP disabled)"
 else
     # Remove TLS config if it exists from a previous run
     rm -f "${CONFIG_DIR}/tls.xml"

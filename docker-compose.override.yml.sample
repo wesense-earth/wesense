@@ -25,6 +25,7 @@ services:
   # clickhouse:
   #   ports:
   #     - "${PORT_CLICKHOUSE_HTTP:-8123}:8123"
+  #     - "${PORT_CLICKHOUSE_HTTPS:-8443}:8443"
   #     - "${PORT_CLICKHOUSE_NATIVE:-9000}:9000"
 
   # Cloudflare Tunnel — routes external traffic to internal services

@@ -201,8 +201,8 @@ services:
           cat /certs/cert.pem /certs/ca.pem > /certs/fullchain.pem
           rm -f /tmp/service.csr /certs/ca.srl
           chown "$$PUID:$$PUID" /certs/fullchain.pem /certs/privkey.pem /certs/ca.pem /certs/cert.pem 2>/dev/null || true
-          chmod 640 /certs/ca-key.pem /certs/privkey.pem
-          chmod 644 /certs/ca.pem /certs/fullchain.pem /certs/cert.pem
+          chmod 640 /certs/ca-key.pem
+          chmod 644 /certs/privkey.pem /certs/ca.pem /certs/fullchain.pem /certs/cert.pem
           echo "Service certificate generated"
         }
 

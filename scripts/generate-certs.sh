@@ -113,5 +113,9 @@ echo "  $0 --renew"
 
 # Set ownership to PUID so services can read after privilege drop
 chown "${PUID}:${PUID}" "$CERT_DIR/fullchain.pem" "$CERT_DIR/privkey.pem" "$CERT_DIR/ca.pem" 2>/dev/null || true
-chmod 640 "$CERT_DIR/ca-key.pem" "$CERT_DIR/privkey.pem"
-chmod 644 "$CERT_DIR/ca.pem" "$CERT_DIR/fullchain.pem" "$CERT_DIR/cert.pem"
+# CA private key is sensitive — only owner can read.
+# Service private key is 644 because multiple Docker services with different UIDs
+# (ClickHouse=101, EMQX=1000, app services=PUID) need to read it.
+# The certs directory is only accessible via Docker bind mounts, not world-exposed.
+chmod 640 "$CERT_DIR/ca-key.pem"
+chmod 644 "$CERT_DIR/privkey.pem" "$CERT_DIR/ca.pem" "$CERT_DIR/fullchain.pem" "$CERT_DIR/cert.pem"

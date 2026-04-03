@@ -432,6 +432,7 @@ services:
         required: false
     volumes:
       - ${DATA_DIR:-./data}/archive-replicator:/app/data
+      - ${DATA_DIR:-./data}/certs:/app/certs:ro
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
@@ -448,8 +449,8 @@ services:
       - WESENSE_PROXY_IROH_PORT=${WESENSE_PROXY_IROH_PORT:-}
       - RUST_LOG=${RUST_LOG:-wesense_archive_replicator=info}
       - TLS_ENABLED=${TLS_ENABLED:-false}
-      - TLS_CERTFILE=${DATA_DIR:-./data}/certs/fullchain.pem
-      - TLS_KEYFILE=${DATA_DIR:-./data}/certs/privkey.pem
+      - TLS_CERTFILE=/app/certs/fullchain.pem
+      - TLS_KEYFILE=/app/certs/privkey.pem
       - TZ=${TZ:-Pacific/Auckland}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:4400/status || exit 1"]

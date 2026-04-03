@@ -27,7 +27,7 @@ services:
     profiles: ["hub", "station", "contributor", "observer", "downlink", "guardian"]
     depends_on:
       cert-init:
-        condition: service_completed_successfully
+        condition: service_healthy
     environment:
       - CLICKHOUSE_ADMIN_PASSWORD=${CLICKHOUSE_ADMIN_PASSWORD:-}
       - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-}
@@ -166,8 +166,9 @@ services:
     restart: always
 
   # ===========================================================================
-  # Cert Init — Auto-generate self-signed TLS certs when TLS_ENABLED=true
-  # Runs once on first start. Skips if certs already exist.
+  # Cert Manager — Auto-generate and renew self-signed TLS certs
+  # Generates certs on first start when TLS_ENABLED=true.
+  # Checks expiry daily and renews when <30 days remaining.
   # ===========================================================================
   cert-init:
     image: alpine/openssl:latest
@@ -175,7 +176,6 @@ services:
     profiles: ["hub", "station", "contributor", "observer", "guardian"]
     volumes:
       - ${DATA_DIR:-./data}/certs:/certs
-      - ./scripts/generate-certs.sh:/scripts/generate-certs.sh:ro
     environment:
       - TLS_ENABLED=${TLS_ENABLED:-false}
       - PUID=${PUID:-1000}
@@ -183,30 +183,74 @@ services:
     command:
       - -c
       - |
-        if [ "$$TLS_ENABLED" != "true" ]; then
-          echo "TLS_ENABLED is not true — skipping cert generation"
-          exit 0
-        fi
-        if [ -f /certs/fullchain.pem ] && [ -f /certs/privkey.pem ]; then
-          echo "Certs already exist — skipping generation"
-          exit 0
-        fi
-        echo "Generating self-signed TLS certificates..."
-        # Generate CA
-        openssl genrsa -out /certs/ca-key.pem 4096
-        openssl req -new -x509 -key /certs/ca-key.pem -out /certs/ca.pem -days 3650 -subj "/O=WeSense/CN=WeSense Deployment CA"
-        # Generate service cert with Docker DNS SANs
+        CERT_DAYS=3650
+        RENEW_THRESHOLD=2592000  # 30 days in seconds
         SANS="DNS:emqx,DNS:clickhouse,DNS:storage-broker,DNS:archive-replicator,DNS:orbitdb,DNS:respiro,DNS:live-transport,DNS:zenoh-api,DNS:localhost,IP:127.0.0.1,IP:172.17.0.1"
-        openssl genrsa -out /certs/privkey.pem 2048
-        openssl req -new -key /certs/privkey.pem -out /tmp/service.csr -subj "/O=WeSense/CN=wesense-services" -addext "subjectAltName=$$SANS"
-        openssl x509 -req -in /tmp/service.csr -CA /certs/ca.pem -CAkey /certs/ca-key.pem -CAcreateserial -out /certs/cert.pem -days 3650 -copy_extensions copy
-        cat /certs/cert.pem /certs/ca.pem > /certs/fullchain.pem
-        rm -f /tmp/service.csr /certs/ca.srl
-        # Set ownership
-        chown "$$PUID:$$PUID" /certs/fullchain.pem /certs/privkey.pem /certs/ca.pem /certs/cert.pem 2>/dev/null || true
-        chmod 640 /certs/ca-key.pem /certs/privkey.pem
-        chmod 644 /certs/ca.pem /certs/fullchain.pem /certs/cert.pem
-        echo "TLS certificates generated in /certs/"
+
+        generate_ca() {
+          echo "Generating new CA (valid 10 years)..."
+          openssl genrsa -out /certs/ca-key.pem 4096
+          openssl req -new -x509 -key /certs/ca-key.pem -out /certs/ca.pem -days 3650 -subj "/O=WeSense/CN=WeSense Deployment CA"
+        }
+
+        generate_service_cert() {
+          echo "Generating service certificate (valid 10 years)..."
+          openssl genrsa -out /certs/privkey.pem 2048
+          openssl req -new -key /certs/privkey.pem -out /tmp/service.csr -subj "/O=WeSense/CN=wesense-services" -addext "subjectAltName=$$SANS"
+          openssl x509 -req -in /tmp/service.csr -CA /certs/ca.pem -CAkey /certs/ca-key.pem -CAcreateserial -out /certs/cert.pem -days $$CERT_DAYS -copy_extensions copy
+          cat /certs/cert.pem /certs/ca.pem > /certs/fullchain.pem
+          rm -f /tmp/service.csr /certs/ca.srl
+          chown "$$PUID:$$PUID" /certs/fullchain.pem /certs/privkey.pem /certs/ca.pem /certs/cert.pem 2>/dev/null || true
+          chmod 640 /certs/ca-key.pem /certs/privkey.pem
+          chmod 644 /certs/ca.pem /certs/fullchain.pem /certs/cert.pem
+          echo "Service certificate generated"
+        }
+
+        cert_needs_renewal() {
+          if [ ! -f /certs/fullchain.pem ]; then
+            return 0  # needs generation
+          fi
+          # Check if cert expires within RENEW_THRESHOLD seconds
+          if ! openssl x509 -in /certs/fullchain.pem -checkend $$RENEW_THRESHOLD -noout 2>/dev/null; then
+            return 0  # expiring soon
+          fi
+          return 1  # cert is fine
+        }
+
+        if [ "$$TLS_ENABLED" != "true" ]; then
+          echo "TLS_ENABLED is not true — skipping cert management"
+          exit 0
+        fi
+
+        # Initial generation if needed
+        if [ ! -f /certs/ca.pem ] || [ ! -f /certs/ca-key.pem ]; then
+          generate_ca
+        fi
+
+        if cert_needs_renewal; then
+          generate_service_cert
+        else
+          EXPIRY=$$(openssl x509 -in /certs/fullchain.pem -enddate -noout 2>/dev/null | cut -d= -f2)
+          echo "Service certificate valid (expires: $$EXPIRY)"
+        fi
+
+        # Stay running and check daily
+        echo "Cert manager running — checking expiry every 24 hours"
+        while true; do
+          sleep 86400
+          if cert_needs_renewal; then
+            echo "Certificate expiring within 30 days — renewing..."
+            generate_service_cert
+            echo "Certificate renewed. Services will pick up new cert on next connection."
+          fi
+        done
+    healthcheck:
+      test: ["CMD", "sh", "-c", "[ -f /certs/fullchain.pem ] || [ \"$$TLS_ENABLED\" != 'true' ]"]
+      interval: 5s
+      timeout: 2s
+      retries: 30
+      start_period: 30s
+    restart: always
 
   # ===========================================================================
   # ClickHouse - Time Series Database

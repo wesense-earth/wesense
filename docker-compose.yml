@@ -119,6 +119,8 @@ services:
       # TLS listeners (disabled by default, enable in .env with certificates)
       - EMQX_LISTENERS__SSL__DEFAULT__ENABLED=${TLS_MQTT_ENABLED:-false}
       - EMQX_LISTENERS__WSS__DEFAULT__ENABLED=${TLS_WS_ENABLED:-false}
+      # Meshtastic forwarding to external maps (only enable on one host)
+      - MESHTASTIC_FORWARDING_ENABLED=${MESHTASTIC_FORWARDING_ENABLED:-false}
       - TZ=${TZ:-Pacific/Auckland}
     healthcheck:
       test: ["CMD", "emqx", "ctl", "status"]

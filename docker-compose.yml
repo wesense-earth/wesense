@@ -234,10 +234,16 @@ services:
           echo "Service certificate valid (expires: $$EXPIRY)"
         fi
 
-        # Fix permissions on every startup — multiple Docker services with different UIDs
-        # (ClickHouse=101, EMQX=1000, app services=PUID) need to read the certs.
-        chmod 640 /certs/ca-key.pem 2>/dev/null || true
-        chmod 644 /certs/privkey.pem /certs/ca.pem /certs/fullchain.pem /certs/cert.pem 2>/dev/null || true
+        # Fix permissions on every startup.
+        # Private key is 640 owned by PUID — only app services can read it.
+        # ClickHouse runs as uid 101, so it gets its own copy with correct ownership.
+        chmod 640 /certs/ca-key.pem /certs/privkey.pem 2>/dev/null || true
+        chmod 644 /certs/ca.pem /certs/fullchain.pem /certs/cert.pem 2>/dev/null || true
+        chown "$$PUID:$$PUID" /certs/privkey.pem 2>/dev/null || true
+        # ClickHouse-specific copy (uid 101 = clickhouse user in the CH container)
+        cp /certs/privkey.pem /certs/privkey-clickhouse.pem 2>/dev/null || true
+        chown 101:101 /certs/privkey-clickhouse.pem 2>/dev/null || true
+        chmod 640 /certs/privkey-clickhouse.pem 2>/dev/null || true
 
         # Stay running and check daily
         echo "Cert manager running — checking expiry every 24 hours"

@@ -14,7 +14,7 @@ if [ "${TLS_ENABLED}" = "true" ] && [ -f "${CERT_DIR}/fullchain.pem" ] && [ -f "
     <openSSL>
         <server>
             <certificateFile>/etc/clickhouse-server/certs/fullchain.pem</certificateFile>
-            <privateKeyFile>/etc/clickhouse-server/certs/privkey.pem</privateKeyFile>
+            <privateKeyFile>/etc/clickhouse-server/certs/privkey-clickhouse.pem</privateKeyFile>
             <caConfig>/etc/clickhouse-server/certs/ca.pem</caConfig>
             <verificationMode>none</verificationMode>
             <loadDefaultCAFile>false</loadDefaultCAFile>

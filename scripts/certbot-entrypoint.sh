@@ -57,7 +57,7 @@ if [ ! -f "${CERT_DIR}/fullchain.pem" ]; then
     NEED_CERT=true
 elif ! openssl x509 -in "${CERT_DIR}/fullchain.pem" -noout -text 2>/dev/null | grep -q "rsaEncryption"; then
     echo "Existing certificate uses non-RSA key type — re-obtaining as RSA..."
-    CERTBOT_ARGS="$CERTBOT_ARGS --force-renewal"
+    CERTBOT_ARGS="$CERTBOT_ARGS --force-renewal --cert-name ${TLS_DOMAIN}"
     NEED_CERT=true
 else
     echo "Certificate already exists for ${TLS_DOMAIN} (RSA, valid)"
@@ -65,7 +65,9 @@ fi
 
 if [ "$NEED_CERT" = true ]; then
     echo "Obtaining certificate for ${TLS_DOMAIN}..."
-    certbot $CERTBOT_ARGS
+    if ! certbot $CERTBOT_ARGS; then
+        echo "ERROR: certbot failed. Will retry at next renewal check."
+    fi
 fi
 
 # Copy certs to shared volume (EMQX reads from here)

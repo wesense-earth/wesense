@@ -120,9 +120,10 @@ services:
       - EMQX_LISTENERS__SSL__DEFAULT__ENABLED=${TLS_MQTT_ENABLED:-false}
       - EMQX_LISTENERS__WSS__DEFAULT__ENABLED=${TLS_WS_ENABLED:-false}
       # Meshtastic forwarding to external maps (only enable on one host)
-      - MESHTASTIC_FORWARDING_ENABLED=${MESHTASTIC_FORWARDING_ENABLED:-false}
-      - MESHTASTIC_FWD_1_ENABLED=${MESHTASTIC_FWD_1_ENABLED:-false}
-      - MESHTASTIC_FWD_2_ENABLED=${MESHTASTIC_FWD_2_ENABLED:-false}
+      # Uses EMQX_ prefix convention for runtime config overrides
+      - EMQX_RULE_ENGINE__RULES__FORWARD_MSH_TO_BRIDGES__ENABLE=${MESHTASTIC_FORWARDING_ENABLED:-false}
+      - EMQX_BRIDGES__MQTT__MESHTASTIC_FWD_1__ENABLE=${MESHTASTIC_FWD_1_ENABLED:-false}
+      - EMQX_BRIDGES__MQTT__MESHTASTIC_FWD_2__ENABLE=${MESHTASTIC_FWD_2_ENABLED:-false}
       - TZ=${TZ:-Pacific/Auckland}
     healthcheck:
       test: ["CMD", "emqx", "ctl", "status"]

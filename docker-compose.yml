@@ -122,13 +122,7 @@ services:
       # Meshtastic forwarding to external maps (only enable on one host)
       - MESHTASTIC_FORWARDING_ENABLED=${MESHTASTIC_FORWARDING_ENABLED:-false}
       - MESHTASTIC_FWD_1_ENABLED=${MESHTASTIC_FWD_1_ENABLED:-false}
-      - MESHTASTIC_FWD_1_SERVER=${MESHTASTIC_FWD_1_SERVER:-"mqtt.meshtastic.liamcottle.net:1883"}
-      - MESHTASTIC_FWD_1_USERNAME=${MESHTASTIC_FWD_1_USERNAME:-uplink}
-      - MESHTASTIC_FWD_1_PASSWORD=${MESHTASTIC_FWD_1_PASSWORD:-uplink}
       - MESHTASTIC_FWD_2_ENABLED=${MESHTASTIC_FWD_2_ENABLED:-false}
-      - MESHTASTIC_FWD_2_SERVER=${MESHTASTIC_FWD_2_SERVER:-"mqtt.meshtastic.org:1883"}
-      - MESHTASTIC_FWD_2_USERNAME=${MESHTASTIC_FWD_2_USERNAME:-meshdev}
-      - MESHTASTIC_FWD_2_PASSWORD=${MESHTASTIC_FWD_2_PASSWORD:-large4cats}
       - TZ=${TZ:-Pacific/Auckland}
     healthcheck:
       test: ["CMD", "emqx", "ctl", "status"]

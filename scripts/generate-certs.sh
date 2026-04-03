@@ -11,7 +11,7 @@
 # The CA cert (ca.pem) can be flashed to ESP32 devices for MQTTS verification.
 # Service certs are used by EMQX, ClickHouse, and other services.
 #
-# Output directory: ./certs/
+# Output directory: ${DATA_DIR}/certs/ (same location EMQX reads from)
 #   ca.pem          — CA certificate (distribute to clients / flash to ESP32)
 #   ca-key.pem      — CA private key (keep secure, never distribute)
 #   fullchain.pem   — Service certificate (used by EMQX, etc.)
@@ -19,7 +19,11 @@
 
 set -euo pipefail
 
-CERT_DIR="${1:-./certs}"
+# Read DATA_DIR from .env if it exists
+if [ -f .env ]; then
+    DATA_DIR=$(grep -E '^DATA_DIR=' .env | cut -d= -f2 | tr -d '"' || true)
+fi
+CERT_DIR="${1:-${DATA_DIR:-./data}/certs}"
 CA_DAYS=3650       # 10 years for CA
 CERT_DAYS=825      # ~2.25 years for service certs (Apple max)
 
@@ -29,9 +33,15 @@ SANS="DNS:emqx,DNS:clickhouse,DNS:storage-broker,DNS:archive-replicator,DNS:orbi
 
 mkdir -p "$CERT_DIR"
 
+# Check for --renew flag
+RENEW=false
+for arg in "$@"; do
+    [ "$arg" = "--renew" ] && RENEW=true
+done
+
 # Check if CA already exists
 if [ -f "$CERT_DIR/ca.pem" ] && [ -f "$CERT_DIR/ca-key.pem" ]; then
-    if [ "${1:-}" = "--renew" ]; then
+    if [ "$RENEW" = true ]; then
         echo "Using existing CA to renew service certificates..."
     else
         echo "CA already exists in $CERT_DIR/"

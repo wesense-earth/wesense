@@ -103,7 +103,7 @@ services:
     volumes:
       - ${DATA_DIR:-./data}/emqx/data:/opt/emqx/data
       - ${DATA_DIR:-./data}/emqx/log:/opt/emqx/log
-      - ${TLS_CERT_DIR:-./certs}:/opt/emqx/etc/certs:ro
+      - ${DATA_DIR:-./data}/certs:/opt/emqx/etc/certs:ro
       - ./emqx/etc/emqx.conf:/opt/emqx/etc/emqx.conf:ro
       - ./emqx/scripts/init-auth.sh:/opt/emqx/scripts/init-auth.sh:ro
     environment:
@@ -129,6 +129,32 @@ services:
     restart: always
     networks:
       - wesense-net
+
+  # ===========================================================================
+  # Certbot — Automatic Let's Encrypt TLS Certificates
+  # Profiles: tls
+  # Obtains and auto-renews certificates via DNS-01 challenge (Cloudflare).
+  # No port 80/443 needed. Writes certs to ${DATA_DIR}/certs/ (shared with EMQX).
+  #
+  # Enable with: COMPOSE_PROFILES=station,tls
+  # Required env vars: TLS_DOMAIN, CLOUDFLARE_API_TOKEN
+  # ===========================================================================
+  certbot:
+    image: certbot/dns-cloudflare:latest
+    container_name: wesense-certbot
+    profiles: ["tls"]
+    entrypoint: /scripts/certbot-entrypoint.sh
+    volumes:
+      - ${DATA_DIR:-./data}/certs:/certs
+      - ${DATA_DIR:-./data}/certbot:/etc/letsencrypt
+      - ./scripts/certbot-entrypoint.sh:/scripts/certbot-entrypoint.sh:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - TLS_DOMAIN=${TLS_DOMAIN:-}
+      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN:-}
+      - CERTBOT_EMAIL=${CERTBOT_EMAIL:-}
+      - CERTBOT_STAGING=${CERTBOT_STAGING:-false}
+    restart: always
 
   # ===========================================================================
   # ClickHouse - Time Series Database

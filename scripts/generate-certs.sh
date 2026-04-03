@@ -25,7 +25,7 @@ if [ -f .env ]; then
 fi
 CERT_DIR="${1:-${DATA_DIR:-./data}/certs}"
 CA_DAYS=3650       # 10 years for CA
-CERT_DAYS=825      # ~2.25 years for service certs (Apple max)
+CERT_DAYS=3650     # 10 years for service certs (internal only, no browser validation)
 
 # Read PUID from .env for cert ownership
 PUID="${PUID:-1000}"

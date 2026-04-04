@@ -24,7 +24,7 @@ services:
   config-check:
     image: busybox:latest
     container_name: wesense-config-check
-    profiles: ["hub", "station", "contributor", "observer", "downlink", "guardian"]
+    profiles: ["hub", "station", "contributor", "downlink", "guardian", "bootstrap"]
     depends_on:
       cert-init:
         condition: service_healthy
@@ -41,9 +41,9 @@ services:
       - |
         ok=true
 
-        # ClickHouse passwords — required for station/observer/guardian profiles
+        # ClickHouse passwords — required for station/guardian profiles
         case "$$COMPOSE_PROFILES" in
-          *station*|*observer*|*guardian*)
+          *station*|*guardian*)
             if [ -z "$$CLICKHOUSE_ADMIN_PASSWORD" ] || [ "$$CLICKHOUSE_ADMIN_PASSWORD" = "CHANGEME" ]; then
               echo "ERROR: CLICKHOUSE_ADMIN_PASSWORD must be set to a real password in .env (not empty, not CHANGEME)"
               ok=false
@@ -57,7 +57,7 @@ services:
 
         # EMQX dashboard password — required for hub/station profiles
         case "$$COMPOSE_PROFILES" in
-          *hub*|*station*)
+          *hub*|*station*|*guardian*)
             if [ -z "$$EMQX_DASHBOARD_PASSWORD" ] || [ "$$EMQX_DASHBOARD_PASSWORD" = "CHANGEME" ]; then
               echo "ERROR: EMQX_DASHBOARD_PASSWORD must be set to a real password in .env (not empty, not CHANGEME)"
               ok=false
@@ -92,7 +92,7 @@ services:
   emqx:
     image: emqx/emqx:5.8.9
     container_name: wesense-emqx
-    profiles: ["hub", "station"]
+    profiles: ["hub", "station", "guardian"]
     user: "0:0"
     depends_on:
       config-check:
@@ -173,7 +173,7 @@ services:
   cert-init:
     image: alpine/openssl:latest
     container_name: wesense-cert-init
-    profiles: ["hub", "station", "contributor", "observer", "guardian"]
+    profiles: ["hub", "station", "contributor", "guardian", "bootstrap"]
     volumes:
       - ${DATA_DIR:-./data}/certs:/certs
     environment:
@@ -275,7 +275,7 @@ services:
   clickhouse:
     image: clickhouse/clickhouse-server:24
     container_name: wesense-clickhouse
-    profiles: ["station", "observer", "guardian"]
+    profiles: ["station", "guardian"]
     depends_on:
       config-check:
         condition: service_completed_successfully
@@ -324,7 +324,7 @@ services:
   zenohd:
     image: eclipse/zenoh:1.7.2
     container_name: wesense-zenohd
-    profiles: ["station"]
+    profiles: ["station", "guardian"]
     depends_on:
       config-check:
         condition: service_completed_successfully
@@ -452,7 +452,7 @@ services:
       - IROH_DATA_DIR=/app/data
       - IROH_GOSSIP_TOPIC=${IROH_GOSSIP_TOPIC:-wesense-archives}
       - IROH_QUIC_PORT=${PORT_IROH_QUIC:-4401}
-      - IROH_STORE_SCOPE=${IROH_STORE_SCOPE:-*/*}
+      - GUARDIAN_SCOPE=${GUARDIAN_SCOPE:-*/*}
       - IROH_BOOTSTRAP_PEERS=${IROH_BOOTSTRAP_PEERS:-}
       - IROH_RELAY_URLS=${IROH_RELAY_URLS:-}
       - ORBITDB_URL=http://localhost:5200
@@ -488,7 +488,7 @@ services:
   ingester-meshtastic:
     image: ${INGESTER_MESHTASTIC_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-meshtastic:${IMAGE_TAG:-latest}}
     container_name: wesense-ingester-meshtastic
-    profiles: ["contributor", "station"]
+    profiles: ["contributor", "station", "guardian"]
     deploy:
       replicas: ${INGESTER_MESHTASTIC:-1}
     depends_on:
@@ -648,7 +648,7 @@ services:
   ingester-wesense:
     image: ${INGESTER_WESENSE_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-wesense:${IMAGE_TAG:-latest}}
     container_name: wesense-ingester-wesense
-    profiles: ["contributor", "station"]
+    profiles: ["contributor", "station", "guardian"]
     deploy:
       replicas: ${INGESTER_WESENSE:-1}
       resources:
@@ -740,7 +740,7 @@ services:
   ingester-homeassistant:
     image: ${INGESTER_HA_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-homeassistant:${IMAGE_TAG:-latest}}
     container_name: wesense-ingester-homeassistant
-    profiles: ["contributor", "station"]
+    profiles: ["contributor", "station", "guardian"]
     deploy:
       replicas: ${INGESTER_HOMEASSISTANT:-1}
     depends_on:
@@ -850,7 +850,7 @@ services:
   respiro:
     image: ${RESPIRO_IMAGE:-ghcr.io/wesense-earth/wesense-respiro:${IMAGE_TAG:-latest}}
     container_name: wesense-respiro
-    profiles: ["station", "observer"]
+    profiles: ["station", "guardian"]
     ports:
       - "${PORT_RESPIRO:-3001}:3000"
     volumes:
@@ -927,7 +927,7 @@ services:
   deployment-classifier:
     image: ${CLASSIFIER_IMAGE:-ghcr.io/wesense-earth/wesense-deployment-classifier:${IMAGE_TAG:-latest}}
     container_name: wesense-deployment-classifier
-    profiles: ["station"]
+    profiles: ["station", "guardian"]
     depends_on:
       config-check:
         condition: service_completed_successfully
@@ -971,7 +971,7 @@ services:
   orbitdb:
     image: ${ORBITDB_IMAGE:-ghcr.io/wesense-earth/wesense-orbitdb:${IMAGE_TAG:-latest}}
     container_name: wesense-orbitdb
-    profiles: ["station", "observer", "bootstrap", "guardian"]
+    profiles: ["station", "bootstrap", "hub", "guardian"]
     # Host networking is required for libp2p peer discovery:
     #   - LAN: mDNS multicast needs the real network interface (Docker bridge isolates it)
     #   - WAN: DHT provider records need a routable address
@@ -1018,7 +1018,7 @@ services:
   live-transport:
     image: ${LIVE_TRANSPORT_IMAGE:-ghcr.io/wesense-earth/wesense-live-transport:${IMAGE_TAG:-latest}}
     container_name: wesense-live-transport
-    profiles: ["station", "observer"]
+    profiles: ["station", "guardian"]
     depends_on:
       config-check:
         condition: service_completed_successfully
@@ -1104,7 +1104,7 @@ services:
   zenoh-api:
     image: ${ZENOH_API_IMAGE:-ghcr.io/wesense-earth/wesense-zenoh-api:${IMAGE_TAG:-latest}}
     container_name: wesense-zenoh-api
-    profiles: ["station", "observer"]
+    profiles: ["station", "guardian"]
     depends_on:
       config-check:
         condition: service_completed_successfully

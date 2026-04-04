@@ -5,7 +5,7 @@
 #   contributor - Ingesters only (sends to remote MQTT hub)
 #   station     - Full local stack (EMQX + ClickHouse + Ingesters + Respiro)
 #   hub         - MQTT broker only (production mqtt.wesense.earth)
-#   downlink    - Meshtastic global downlink (add to station, hub operators only)
+#   downlink    - Meshtastic global downlink (add to guardian, hub operators only)
 #   observer    - Map + ClickHouse, receives data via Zenoh P2P
 #   guardian    - Archive guardian (ClickHouse + OrbitDB + Storage Broker)
 #   researcher  - ClickHouse + archives (future)
@@ -13,7 +13,7 @@
 # Quick start:
 #   1. Copy .env.sample to .env
 #   2. Edit .env with your values
-#   3. Run: docker compose --profile station up -d
+#   3. Run: docker compose --profile guardian up -d
 #   4. Access Respiro map at http://localhost:3000
 
 services:
@@ -24,7 +24,7 @@ services:
   config-check:
     image: busybox:latest
     container_name: wesense-config-check
-    profiles: ["hub", "station", "contributor", "downlink", "guardian", "bootstrap"]
+    profiles: ["hub", "contributor", "downlink", "guardian", "bootstrap"]
     depends_on:
       cert-init:
         condition: service_healthy
@@ -41,9 +41,9 @@ services:
       - |
         ok=true
 
-        # ClickHouse passwords — required for station/guardian profiles
+        # ClickHouse passwords — required for guardian profile
         case "$$COMPOSE_PROFILES" in
-          *station*|*guardian*)
+          *guardian*)
             if [ -z "$$CLICKHOUSE_ADMIN_PASSWORD" ] || [ "$$CLICKHOUSE_ADMIN_PASSWORD" = "CHANGEME" ]; then
               echo "ERROR: CLICKHOUSE_ADMIN_PASSWORD must be set to a real password in .env (not empty, not CHANGEME)"
               ok=false
@@ -55,9 +55,9 @@ services:
             ;;
         esac
 
-        # EMQX dashboard password — required for hub/station profiles
+        # EMQX dashboard password — required for hub/guardian profiles
         case "$$COMPOSE_PROFILES" in
-          *hub*|*station*|*guardian*)
+          *hub*|*guardian*)
             if [ -z "$$EMQX_DASHBOARD_PASSWORD" ] || [ "$$EMQX_DASHBOARD_PASSWORD" = "CHANGEME" ]; then
               echo "ERROR: EMQX_DASHBOARD_PASSWORD must be set to a real password in .env (not empty, not CHANGEME)"
               ok=false
@@ -83,7 +83,7 @@ services:
 
   # ===========================================================================
   # EMQX - MQTT Broker
-  # Profiles: hub, station
+  # Profiles: hub, guardian
   #
   # Ports exposed to host are configured in .env — see "Host Port Mapping".
   # For additional ports (dashboard, WebSocket, TLS, ClickHouse), copy
@@ -92,7 +92,7 @@ services:
   emqx:
     image: emqx/emqx:5.8.9
     container_name: wesense-emqx
-    profiles: ["hub", "station", "guardian"]
+    profiles: ["hub", "guardian"]
     user: "0:0"
     depends_on:
       config-check:
@@ -144,7 +144,7 @@ services:
   # Obtains and auto-renews certificates via DNS-01 challenge (Cloudflare).
   # No port 80/443 needed. Writes certs to ${DATA_DIR}/certs/ (shared with EMQX).
   #
-  # Enable with: COMPOSE_PROFILES=station,tls
+  # Enable with: COMPOSE_PROFILES=guardian,tls
   # Required env vars: TLS_DOMAIN, CLOUDFLARE_API_TOKEN
   # ===========================================================================
   certbot:
@@ -173,7 +173,7 @@ services:
   cert-init:
     image: alpine/openssl:latest
     container_name: wesense-cert-init
-    profiles: ["hub", "station", "contributor", "guardian", "bootstrap"]
+    profiles: ["hub", "contributor", "guardian", "bootstrap"]
     volumes:
       - ${DATA_DIR:-./data}/certs:/certs
     environment:
@@ -266,7 +266,7 @@ services:
 
   # ===========================================================================
   # ClickHouse - Time Series Database
-  # Profiles: station, observer
+  # Profiles: guardian, observer
   # Creates both 'wesense' and 'wesense_respiro' databases on first start.
   # Services connect via Docker network internally. To access ClickHouse from
   # outside Docker (e.g., DBeaver, clickhouse-client), add a
@@ -275,7 +275,7 @@ services:
   clickhouse:
     image: clickhouse/clickhouse-server:24
     container_name: wesense-clickhouse
-    profiles: ["station", "guardian"]
+    profiles: ["guardian"]
     depends_on:
       config-check:
         condition: service_completed_successfully
@@ -317,14 +317,14 @@ services:
 
   # ===========================================================================
   # Zenoh Router — P2P data distribution
-  # Profiles: station
+  # Profiles: guardian
   # Provides a local Zenoh router for ingesters to publish signed readings.
   # Contributors connect to a remote router instead.
   # ===========================================================================
   zenohd:
     image: eclipse/zenoh:1.7.2
     container_name: wesense-zenohd
-    profiles: ["station", "guardian"]
+    profiles: ["guardian"]
     depends_on:
       config-check:
         condition: service_completed_successfully
@@ -347,14 +347,14 @@ services:
 
   # ===========================================================================
   # Storage Broker — HTTP API for sensor reading ingestion
-  # Profiles: contributor, station, guardian
+  # Profiles: contributor, guardian
   # Receives readings from ingesters via POST /readings, geocodes, deduplicates,
   # and writes to ClickHouse and Iroh (via archive-replicator).
   # ===========================================================================
   storage-broker:
     image: ${STORAGE_BROKER_IMAGE:-ghcr.io/wesense-earth/wesense-storage-broker:${IMAGE_TAG:-latest}}
     container_name: wesense-storage-broker
-    profiles: ["contributor", "station", "guardian"]
+    profiles: ["contributor", "guardian"]
     deploy:
       resources:
         limits:
@@ -426,7 +426,7 @@ services:
   archive-replicator:
     image: ${ARCHIVE_REPLICATOR_IMAGE:-ghcr.io/wesense-earth/wesense-archive-replicator:${IMAGE_TAG:-latest}}
     container_name: wesense-archive-replicator
-    profiles: ["contributor", "station", "guardian"]
+    profiles: ["contributor", "guardian"]
     # Host networking enables mDNS multicast for automatic LAN peer discovery.
     # Archive replicators on the same LAN find each other directly without OrbitDB.
     # Other containers reach the HTTP API (port 4400) via extra_hosts: host-gateway.
@@ -479,16 +479,16 @@ services:
 
   # ===========================================================================
   # Meshtastic Ingester (Unified: public + community)
-  # Profiles: contributor, station
+  # Profiles: contributor, guardian
   # Community mode (default): receives from a local Meshtastic node via EMQX
   # Public mode: subscribes to mqtt.meshtastic.org (hub operators only)
-  # depends_on with required: false — waits for EMQX/ClickHouse in station
+  # depends_on with required: false — waits for EMQX/ClickHouse in guardian
   # profile, skips gracefully in contributor profile (connects to remote hosts).
   # ===========================================================================
   ingester-meshtastic:
     image: ${INGESTER_MESHTASTIC_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-meshtastic:${IMAGE_TAG:-latest}}
     container_name: wesense-ingester-meshtastic
-    profiles: ["contributor", "station", "guardian"]
+    profiles: ["contributor", "guardian"]
     deploy:
       replicas: ${INGESTER_MESHTASTIC:-1}
     depends_on:
@@ -560,13 +560,13 @@ services:
 
   # ===========================================================================
   # Meshtastic Downlink Ingester (Global)
-  # Profile: downlink (opt-in, combine with station)
+  # Profile: downlink (opt-in, combine with guardian)
   # Subscribes to mqtt.meshtastic.org and community servers worldwide.
   # Generates significant MQTT traffic — only run this if you are a hub operator
   # or intentionally collecting global Meshtastic environmental data.
   #
-  # Enable with:  docker compose --profile station --profile downlink up -d
-  # Or in .env:   COMPOSE_PROFILES=station,downlink
+  # Enable with:  docker compose --profile guardian --profile downlink up -d
+  # Or in .env:   COMPOSE_PROFILES=guardian,downlink
   #
   # Edit ingester-meshtastic-downlink/config/mqtt_regions.json to enable/disable
   # specific regions.
@@ -641,14 +641,14 @@ services:
 
   # ===========================================================================
   # WeSense Ingester (Unified: WiFi + LoRa + TTN webhook)
-  # Profiles: contributor, station
+  # Profiles: contributor, guardian
   # Subscribes to wesense/v2/wifi/# and wesense/v2/lora/# topics
   # Optionally runs TTN webhook HTTP server (TTN_WEBHOOK_ENABLED=true)
   # ===========================================================================
   ingester-wesense:
     image: ${INGESTER_WESENSE_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-wesense:${IMAGE_TAG:-latest}}
     container_name: wesense-ingester-wesense
-    profiles: ["contributor", "station", "guardian"]
+    profiles: ["contributor", "guardian"]
     deploy:
       replicas: ${INGESTER_WESENSE:-1}
       resources:
@@ -730,7 +730,7 @@ services:
 
   # ===========================================================================
   # Home Assistant Ingester
-  # Profiles: contributor, station
+  # Profiles: contributor, guardian
   # Pulls sensor data from Home Assistant (WebSocket/REST)
   # Critical: loop prevention filters exclude WeSense ESP32 devices
   #
@@ -740,7 +740,7 @@ services:
   ingester-homeassistant:
     image: ${INGESTER_HA_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-homeassistant:${IMAGE_TAG:-latest}}
     container_name: wesense-ingester-homeassistant
-    profiles: ["contributor", "station", "guardian"]
+    profiles: ["contributor", "guardian"]
     deploy:
       replicas: ${INGESTER_HOMEASSISTANT:-1}
     depends_on:
@@ -784,14 +784,14 @@ services:
 
   # ===========================================================================
   # Government Air Quality Ingester — New Zealand (Reference Stations)
-  # Profile: govaq-nz (opt-in, combine with station or contributor)
+  # Profile: govaq-nz (opt-in, combine with guardian or contributor)
   # Polls NZ regional council APIs for reference-grade readings.
   # Sources: ECan, Tasman, Nelson, Marlborough, Hawke's Bay, Gisborne,
   #          Horizons, West Coast (via Hilltop API).
   # Configure sources in ingester-govaq-nz/config/sources.json.
   #
-  # Enable with:  docker compose --profile station --profile govaq-nz up -d
-  # Or in .env:   COMPOSE_PROFILES=station,govaq-nz
+  # Enable with:  docker compose --profile guardian --profile govaq-nz up -d
+  # Or in .env:   COMPOSE_PROFILES=guardian,govaq-nz
   # ===========================================================================
   ingester-govaq-nz:
     image: ${INGESTER_GOVAQ_NZ_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-govaq-nz:${IMAGE_TAG:-latest}}
@@ -842,7 +842,7 @@ services:
 
   # ===========================================================================
   # Respiro - Environmental Sensor Map
-  # Profiles: station, observer
+  # Profiles: guardian, observer
   # Web dashboard displaying sensor data from ClickHouse.
   # Typically served behind a reverse proxy (SWAG, Caddy, Nginx Proxy Manager)
   # which handles TLS/letsencrypt — Respiro itself serves plain HTTP.
@@ -850,7 +850,7 @@ services:
   respiro:
     image: ${RESPIRO_IMAGE:-ghcr.io/wesense-earth/wesense-respiro:${IMAGE_TAG:-latest}}
     container_name: wesense-respiro
-    profiles: ["station", "guardian"]
+    profiles: ["guardian"]
     ports:
       - "${PORT_RESPIRO:-3001}:3000"
     volumes:
@@ -919,7 +919,7 @@ services:
 
   # ===========================================================================
   # Deployment Classifier
-  # Profiles: station
+  # Profiles: guardian
   # Analyses sensor behaviour (variance, weather correlation, temp range) to
   # classify devices as indoor/outdoor/device/mobile etc. Runs on a cron
   # schedule (default: every 12 hours). Uses Open-Meteo API for weather data.
@@ -927,7 +927,7 @@ services:
   deployment-classifier:
     image: ${CLASSIFIER_IMAGE:-ghcr.io/wesense-earth/wesense-deployment-classifier:${IMAGE_TAG:-latest}}
     container_name: wesense-deployment-classifier
-    profiles: ["station", "guardian"]
+    profiles: ["guardian"]
     depends_on:
       config-check:
         condition: service_completed_successfully
@@ -962,7 +962,7 @@ services:
 
   # ===========================================================================
   # OrbitDB — Distributed Node Registry & Trust Sync
-  # Profiles: station, observer
+  # Profiles: guardian, observer
   # Helia (IPFS) + OrbitDB for automated peer discovery and trust list
   # replication. Handles: node registry, trust sync, store scope tracking.
   # Port 4002 for libp2p peer connections (OrbitDB replication only).
@@ -971,7 +971,7 @@ services:
   orbitdb:
     image: ${ORBITDB_IMAGE:-ghcr.io/wesense-earth/wesense-orbitdb:${IMAGE_TAG:-latest}}
     container_name: wesense-orbitdb
-    profiles: ["station", "bootstrap", "hub", "guardian"]
+    profiles: ["bootstrap", "hub", "guardian"]
     # Host networking is required for libp2p peer discovery:
     #   - LAN: mDNS multicast needs the real network interface (Docker bridge isolates it)
     #   - WAN: DHT provider records need a routable address
@@ -1008,7 +1008,7 @@ services:
 
   # ===========================================================================
   # Live Transport — Bidirectional MQTT ↔ Zenoh Bridge
-  # Profiles: station, observer
+  # Profiles: guardian, observer
   # Outbound: subscribes to MQTT decoded readings from all local ingesters,
   # signs them, and publishes to the Zenoh P2P network.
   # Inbound: subscribes to Zenoh, verifies signatures, writes to ClickHouse.
@@ -1018,7 +1018,7 @@ services:
   live-transport:
     image: ${LIVE_TRANSPORT_IMAGE:-ghcr.io/wesense-earth/wesense-live-transport:${IMAGE_TAG:-latest}}
     container_name: wesense-live-transport
-    profiles: ["station", "guardian"]
+    profiles: ["guardian"]
     depends_on:
       config-check:
         condition: service_completed_successfully
@@ -1044,7 +1044,7 @@ services:
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
-      # Zenoh connection (client mode — station: local zenohd, observer: remote router)
+      # Zenoh connection (client mode — guardian: local zenohd, observer: remote router)
       - ZENOH_ENABLED=true
       - ZENOH_MODE=${ZENOH_MODE:-client}
       - ZENOH_ROUTERS=${ZENOH_ROUTERS:-tcp/zenohd:7447}
@@ -1097,14 +1097,14 @@ services:
 
   # ===========================================================================
   # Zenoh API — HTTP Frontend for Distributed Queries
-  # Profiles: station, observer
+  # Profiles: guardian, observer
   # Translates REST requests into Zenoh distributed queries.
   # Respiro calls these endpoints to show P2P data.
   # ===========================================================================
   zenoh-api:
     image: ${ZENOH_API_IMAGE:-ghcr.io/wesense-earth/wesense-zenoh-api:${IMAGE_TAG:-latest}}
     container_name: wesense-zenoh-api
-    profiles: ["station", "guardian"]
+    profiles: ["guardian"]
     depends_on:
       config-check:
         condition: service_completed_successfully

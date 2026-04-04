@@ -219,7 +219,8 @@ services:
 
         if [ "$$TLS_ENABLED" != "true" ]; then
           echo "TLS_ENABLED is not true — skipping cert management"
-          exit 0
+          # Stay running so healthcheck passes (other services depend on us)
+          while true; do sleep 86400; done
         fi
 
         # Initial generation if needed

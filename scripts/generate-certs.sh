@@ -36,7 +36,7 @@ fi
 # Service names that appear as SANs in the service cert.
 # Includes Docker DNS names, localhost, and common host-gateway addresses
 # for services on network_mode: host (archive-replicator, orbitdb).
-SANS="DNS:emqx,DNS:clickhouse,DNS:storage-broker,DNS:archive-replicator,DNS:orbitdb,DNS:respiro,DNS:live-transport,DNS:zenoh-api,DNS:localhost,IP:127.0.0.1,IP:172.17.0.1"
+SANS="DNS:emqx,DNS:clickhouse,DNS:storage-broker,DNS:archive-replicator,DNS:orbitdb,DNS:wesense-orbitdb,DNS:respiro,DNS:live-transport,DNS:zenoh-api,DNS:localhost,IP:127.0.0.1,IP:172.17.0.1"
 
 mkdir -p "$CERT_DIR"
 

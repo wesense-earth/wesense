@@ -185,7 +185,7 @@ services:
       - |
         CERT_DAYS=3650
         RENEW_THRESHOLD=2592000  # 30 days in seconds
-        SANS="DNS:emqx,DNS:clickhouse,DNS:storage-broker,DNS:archive-replicator,DNS:orbitdb,DNS:respiro,DNS:live-transport,DNS:zenoh-api,DNS:localhost,IP:127.0.0.1,IP:172.17.0.1"
+        SANS="DNS:emqx,DNS:clickhouse,DNS:storage-broker,DNS:archive-replicator,DNS:orbitdb,DNS:wesense-orbitdb,DNS:respiro,DNS:live-transport,DNS:zenoh-api,DNS:localhost,IP:127.0.0.1,IP:172.17.0.1"
 
         generate_ca() {
           echo "Generating new CA (valid 10 years)..."

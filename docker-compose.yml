@@ -488,9 +488,7 @@ services:
   ingester-meshtastic:
     image: ${INGESTER_MESHTASTIC_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-meshtastic:${IMAGE_TAG:-latest}}
     container_name: wesense-ingester-meshtastic
-    profiles: ["contributor", "guardian"]
-    deploy:
-      replicas: ${INGESTER_MESHTASTIC:-1}
+    profiles: ["meshtastic"]
     depends_on:
       config-check:
         condition: service_completed_successfully
@@ -574,7 +572,7 @@ services:
   ingester-meshtastic-downlink:
     image: ${INGESTER_MESHTASTIC_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-meshtastic:${IMAGE_TAG:-latest}}
     container_name: wesense-ingester-meshtastic-downlink
-    profiles: ["downlink"]
+    profiles: ["meshtastic-downlink"]
     depends_on:
       config-check:
         condition: service_completed_successfully
@@ -648,9 +646,8 @@ services:
   ingester-wesense:
     image: ${INGESTER_WESENSE_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-wesense:${IMAGE_TAG:-latest}}
     container_name: wesense-ingester-wesense
-    profiles: ["contributor", "guardian"]
+    profiles: ["wesense"]
     deploy:
-      replicas: ${INGESTER_WESENSE:-1}
       resources:
         limits:
           memory: ${INGESTER_WESENSE_MEM_LIMIT:-1G}
@@ -740,9 +737,7 @@ services:
   ingester-homeassistant:
     image: ${INGESTER_HA_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-homeassistant:${IMAGE_TAG:-latest}}
     container_name: wesense-ingester-homeassistant
-    profiles: ["contributor", "guardian"]
-    deploy:
-      replicas: ${INGESTER_HOMEASSISTANT:-1}
+    profiles: ["homeassistant"]
     depends_on:
       config-check:
         condition: service_completed_successfully
@@ -797,8 +792,6 @@ services:
     image: ${INGESTER_GOVAQ_NZ_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-govaq-nz:${IMAGE_TAG:-latest}}
     container_name: wesense-ingester-govaq-nz
     profiles: ["govaq-nz"]
-    deploy:
-      replicas: ${INGESTER_GOVAQ_NZ:-1}
     depends_on:
       config-check:
         condition: service_completed_successfully

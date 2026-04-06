@@ -31,5 +31,21 @@ else
     rm -f "${CONFIG_DIR}/tls.xml"
 fi
 
+# Run schema migrations in background after ClickHouse starts.
+# These are idempotent ALTER TABLE ADD COLUMN IF NOT EXISTS statements
+# that ensure existing deployments get new columns added since their
+# initial setup. New deployments already have all columns from 01-create-tables.sql.
+(
+    # Wait for ClickHouse to be ready
+    for i in $(seq 1 60); do
+        if clickhouse-client --query "SELECT 1" > /dev/null 2>&1; then
+            clickhouse-client --query "ALTER TABLE wesense.sensor_readings ADD COLUMN IF NOT EXISTS data_source_name LowCardinality(String) DEFAULT ''" 2>/dev/null && \
+                echo "Schema migration: data_source_name column ensured" || true
+            break
+        fi
+        sleep 2
+    done
+) &
+
 # Hand off to the real ClickHouse entrypoint
 exec /entrypoint.sh "$@"

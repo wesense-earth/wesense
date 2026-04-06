@@ -465,7 +465,7 @@ services:
       - TLS_KEYFILE=/app/certs/privkey.pem
       - TZ=${TZ:-Pacific/Auckland}
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:4400/status || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- --no-check-certificate https://localhost:4400/status 2>/dev/null || wget -qO- http://localhost:4400/status 2>/dev/null || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -944,6 +944,7 @@ services:
       # Internal TLS
       - TLS_ENABLED=${TLS_ENABLED:-false}
       - TLS_CA_CERTFILE=/app/certs/ca.pem
+      - NODE_EXTRA_CA_CERTS=/app/certs/ca.pem
       # Classifier settings
       - CLASSIFIER_MODE=scheduler
       - CLASSIFIER_SCHEDULE=${CLASSIFIER_SCHEDULE:-0 */12 * * *}

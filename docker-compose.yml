@@ -930,6 +930,7 @@ services:
       - ${DATA_DIR:-./data}/deployment-classifier/reports:/app/reports
       - ${DATA_DIR:-./data}/deployment-classifier/logs:/app/logs
       - ${DATA_DIR:-./data}/deployment-classifier/data:/app/data
+      - ${DATA_DIR:-./data}/certs:/app/certs:ro
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
@@ -940,6 +941,9 @@ services:
       - CLICKHOUSE_DATABASE=${CLICKHOUSE_DB:-wesense}
       # Archive replicator (for P2P classification export)
       - ARCHIVE_REPLICATOR_URL=http://archive-replicator:4400
+      # Internal TLS
+      - TLS_ENABLED=${TLS_ENABLED:-false}
+      - TLS_CA_CERTFILE=/app/certs/ca.pem
       # Classifier settings
       - CLASSIFIER_MODE=scheduler
       - CLASSIFIER_SCHEDULE=${CLASSIFIER_SCHEDULE:-0 */12 * * *}

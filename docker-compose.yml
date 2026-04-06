@@ -938,12 +938,16 @@ services:
       - CLICKHOUSE_USER=${CLICKHOUSE_USER:-wesense}
       - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
       - CLICKHOUSE_DATABASE=${CLICKHOUSE_DB:-wesense}
+      # Archive replicator (for P2P classification export)
+      - ARCHIVE_REPLICATOR_URL=http://archive-replicator:4400
       # Classifier settings
       - CLASSIFIER_MODE=scheduler
       - CLASSIFIER_SCHEDULE=${CLASSIFIER_SCHEDULE:-0 */12 * * *}
       - RUN_ON_STARTUP=${CLASSIFIER_RUN_ON_STARTUP:-true}
       - DRY_RUN=${CLASSIFIER_DRY_RUN:-false}
       - TZ=${TZ:-Pacific/Auckland}
+    extra_hosts:
+      - "archive-replicator:host-gateway"
     restart: always
     networks:
       - wesense-net

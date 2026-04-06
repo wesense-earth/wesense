@@ -65,13 +65,17 @@ services:
             ;;
         esac
 
-        # MQTT credentials — optional, but warn if partially set
-        if [ -n "$$MQTT_USER" ] && [ -z "$$MQTT_PASSWORD" ]; then
-          echo "WARNING: MQTT_USER is set but MQTT_PASSWORD is empty — MQTT auth will not be enabled"
-        fi
-        if [ -z "$$MQTT_USER" ] && [ -z "$$MQTT_PASSWORD" ]; then
-          echo "NOTE: MQTT_USER/MQTT_PASSWORD not set — EMQX will allow anonymous connections"
-        fi
+        # MQTT credentials — only relevant when EMQX is running (hub/guardian)
+        case "$$COMPOSE_PROFILES" in
+          *hub*|*guardian*)
+            if [ -n "$$MQTT_USER" ] && [ -z "$$MQTT_PASSWORD" ]; then
+              echo "WARNING: MQTT_USER is set but MQTT_PASSWORD is empty — MQTT auth will not be enabled"
+            fi
+            if [ -z "$$MQTT_USER" ] && [ -z "$$MQTT_PASSWORD" ]; then
+              echo "NOTE: MQTT_USER/MQTT_PASSWORD not set — EMQX will allow anonymous connections"
+            fi
+            ;;
+        esac
 
         if [ "$$ok" = "false" ]; then
           echo "Fix the above errors in .env and try again."

@@ -27,6 +27,7 @@ clickhouse-client --query "
     GRANT SELECT, INSERT ON wesense.* TO \`${CLICKHOUSE_APP_USER}\`;
     GRANT SELECT, INSERT ON wesense_respiro.* TO \`${CLICKHOUSE_APP_USER}\`;
     GRANT ALTER UPDATE ON wesense.sensor_readings TO \`${CLICKHOUSE_APP_USER}\`;
+    GRANT SELECT ON system.parts TO \`${CLICKHOUSE_APP_USER}\`;
 "
 
 echo "00-create-app-user: User '$CLICKHOUSE_APP_USER' created with SELECT/INSERT on wesense/wesense_respiro and ALTER UPDATE on sensor_readings."

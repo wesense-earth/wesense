@@ -290,7 +290,7 @@ services:
       - ${CLICKHOUSE_DATA_DIR:-${DATA_DIR:-./data}/clickhouse}/data:/var/lib/clickhouse
       - ${CLICKHOUSE_DATA_DIR:-${DATA_DIR:-./data}/clickhouse}/logs:/var/log/clickhouse-server
       - ./clickhouse/init:/docker-entrypoint-initdb.d:ro
-      - ./clickhouse/config.d:/etc/clickhouse-server/config.d:ro
+      - ./clickhouse/config.d:/etc/clickhouse-server/config.d
       - ./clickhouse/scripts/init-tls.sh:/scripts/init-tls.sh:ro
       - ${DATA_DIR:-./data}/certs:/etc/clickhouse-server/certs:ro
     environment:

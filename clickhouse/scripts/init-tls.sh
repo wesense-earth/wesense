@@ -41,6 +41,11 @@ fi
         if clickhouse-client --query "SELECT 1" > /dev/null 2>&1; then
             clickhouse-client --query "ALTER TABLE wesense.sensor_readings ADD COLUMN IF NOT EXISTS data_source_name LowCardinality(String) DEFAULT ''" 2>/dev/null && \
                 echo "Schema migration: data_source_name column ensured" || true
+            # Ensure app user can read system.parts (needed for storage stats in Respiro)
+            if [ -n "$CLICKHOUSE_APP_USER" ] && [ "$CLICKHOUSE_APP_USER" != "default" ]; then
+                clickhouse-client --query "GRANT SELECT ON system.parts TO \`${CLICKHOUSE_APP_USER}\`" 2>/dev/null && \
+                    echo "Schema migration: system.parts grant ensured for ${CLICKHOUSE_APP_USER}" || true
+            fi
             break
         fi
         sleep 2

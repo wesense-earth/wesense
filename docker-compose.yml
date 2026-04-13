@@ -290,8 +290,10 @@ services:
       - ${CLICKHOUSE_DATA_DIR:-${DATA_DIR:-./data}/clickhouse}/data:/var/lib/clickhouse
       - ${CLICKHOUSE_DATA_DIR:-${DATA_DIR:-./data}/clickhouse}/logs:/var/log/clickhouse-server
       - ./clickhouse/init:/docker-entrypoint-initdb.d:ro
+      - ./clickhouse/migrations:/migrations:ro
       - ./clickhouse/config.d/system-log-ttl.xml:/etc/clickhouse-server/config.d/system-log-ttl.xml:ro
       - ./clickhouse/scripts/init-tls.sh:/scripts/init-tls.sh:ro
+      - ./clickhouse/scripts/migrate.sh:/scripts/migrate.sh:ro
       - ${DATA_DIR:-./data}/certs:/etc/clickhouse-server/certs:ro
     environment:
       - CLICKHOUSE_DB=${CLICKHOUSE_DB:-wesense}

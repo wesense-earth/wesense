@@ -32,19 +32,18 @@ else
 fi
 
 # Run schema migrations in background after ClickHouse starts.
-# These are idempotent ALTER TABLE ADD COLUMN IF NOT EXISTS statements
-# that ensure existing deployments get new columns added since their
-# initial setup. New deployments already have all columns from 01-create-tables.sql.
+# migrate.sh applies numbered SQL files from /migrations/, tracking
+# applied versions in wesense.schema_migrations. All migrations are
+# idempotent so safe on both fresh installs and existing deployments.
 (
-    # Wait for ClickHouse to be ready
+    /scripts/migrate.sh
+
+    # Ensure app user can read system.parts (needed for storage stats in Respiro)
     for i in $(seq 1 60); do
         if clickhouse-client --query "SELECT 1" > /dev/null 2>&1; then
-            clickhouse-client --query "ALTER TABLE wesense.sensor_readings ADD COLUMN IF NOT EXISTS data_source_name LowCardinality(String) DEFAULT ''" 2>/dev/null && \
-                echo "Schema migration: data_source_name column ensured" || true
-            # Ensure app user can read system.parts (needed for storage stats in Respiro)
             if [ -n "$CLICKHOUSE_APP_USER" ] && [ "$CLICKHOUSE_APP_USER" != "default" ]; then
                 clickhouse-client --query "GRANT SELECT ON system.parts TO \`${CLICKHOUSE_APP_USER}\`" 2>/dev/null && \
-                    echo "Schema migration: system.parts grant ensured for ${CLICKHOUSE_APP_USER}" || true
+                    echo "Permissions: system.parts grant ensured for ${CLICKHOUSE_APP_USER}" || true
             fi
             break
         fi

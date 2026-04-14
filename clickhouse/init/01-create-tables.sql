@@ -53,7 +53,8 @@ CREATE TABLE IF NOT EXISTS wesense.sensor_readings
     `received_via` LowCardinality(String) DEFAULT 'local' COMMENT 'How this station received the reading: local or p2p',
     `data_source_name` LowCardinality(String) DEFAULT '',
     `data_license` LowCardinality(String) DEFAULT 'CC-BY-4.0' COMMENT 'Data license for this reading (default CC-BY-4.0 for WeSense-originated data)',
-    `reading_type_name` LowCardinality(String) DEFAULT '' COMMENT 'Human-readable display name (e.g. PM2.5 for pm2_5)'
+    `reading_type_name` LowCardinality(String) DEFAULT '' COMMENT 'Human-readable display name (e.g. PM2.5 for pm2_5)',
+    `signing_payload_version` UInt16 DEFAULT 1 COMMENT 'Which version of the canonical schema was used to build the signed payload'
 )
 ENGINE = ReplacingMergeTree(timestamp)
 PARTITION BY toYYYYMM(timestamp)

@@ -41,9 +41,12 @@ $CH_EXEC -q "
 ALTER TABLE wesense.sensor_readings
 UPDATE reading_type_name = multiIf(
     reading_type = 'temperature', 'Temperature',
+    reading_type = 'temperature_5m', 'Temperature (5m)',
+    reading_type = 'temperature_6m', 'Temperature (6m)',
     reading_type = 'humidity', 'Humidity',
     reading_type = 'pressure', 'Pressure',
     reading_type = 'co2', 'CO₂',
+    reading_type = 'gas_resistance', 'Gas Resistance',
     reading_type = 'pm1_0', 'PM1.0',
     reading_type = 'pm2_5', 'PM2.5',
     reading_type = 'pm10', 'PM10',

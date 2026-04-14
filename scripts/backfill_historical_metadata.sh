@@ -73,51 +73,54 @@ UPDATE reading_type_name = multiIf(
 WHERE reading_type_name = ''
 "
 
-echo "=== Backfill 3: public_key from currently-known ingester keys ==="
-echo "Reading public keys from data/trust_list.json (local TrustStore)..."
+echo "=== Backfill 3: public_key from ClickHouse itself ==="
+echo "Reading (ingester_id, key_version) → public_key mappings from recent readings..."
 
-TRUST_FILE="${TRUST_FILE:-data/trust_list.json}"
+# Source the public keys from ClickHouse itself. New readings (from the
+# upgraded pipeline) already have public_key populated. Every (ingester_id,
+# key_version) pair has exactly one correct public_key value, so we can
+# just copy it onto the historical rows that still have empty public_key.
+#
+# This avoids needing to find trust_list.json on the host, which can live
+# in any of several ingester-specific subdirectories.
+$CH_EXEC --multiquery <<'SQL'
+-- Create a temporary dictionary-like table mapping ingester keys to public_keys,
+-- built from the most recent row per (ingester_id, key_version).
+CREATE OR REPLACE DICTIONARY wesense.ingester_public_keys (
+    ingester_id String,
+    key_version UInt32,
+    public_key String
+)
+PRIMARY KEY ingester_id, key_version
+SOURCE(CLICKHOUSE(
+    QUERY $$
+        SELECT
+            ingester_id,
+            key_version,
+            argMax(public_key, timestamp) AS public_key
+        FROM wesense.sensor_readings
+        WHERE public_key != ''
+          AND ingester_id != ''
+        GROUP BY ingester_id, key_version
+    $$
+))
+LIFETIME(MIN 0 MAX 0)
+LAYOUT(COMPLEX_KEY_HASHED());
 
-if [ ! -f "$TRUST_FILE" ]; then
-    echo "WARNING: Trust list not found at $TRUST_FILE. Skipping public_key backfill."
-    echo "  public_key column will remain empty for historical rows on this station."
-    echo "  (New readings will have public_key populated correctly.)"
-else
-    # Build a CASE WHEN ... from the local trust list.
-    # For each (ingester_id, key_version) pair in trust_list.json, emit:
-    #   WHEN ingester_id = '...' AND key_version = N THEN '<base64>'
-    python3 << 'PYEOF' > /tmp/public_key_cases.sql
-import json
-import sys
+SYSTEM RELOAD DICTIONARY wesense.ingester_public_keys;
 
-with open("${TRUST_FILE}") as f:
-    data = json.load(f)
+ALTER TABLE wesense.sensor_readings
+UPDATE public_key = dictGetOrDefault(
+    'wesense.ingester_public_keys',
+    'public_key',
+    (ingester_id, key_version),
+    ''
+)
+WHERE public_key = ''
+  AND ingester_id != '';
 
-cases = []
-for iid, versions in data.get("keys", {}).items():
-    for kv, entry in versions.items():
-        pk = entry.get("public_key", "")
-        if pk and entry.get("status") == "active":
-            cases.append(f"    ingester_id = '{iid}' AND key_version = {int(kv)}, '{pk}'")
-
-if not cases:
-    print("-- no active keys in trust list; skipping public_key update")
-    sys.exit(0)
-
-sql = "ALTER TABLE wesense.sensor_readings\n"
-sql += "UPDATE public_key = multiIf(\n"
-sql += ",\n".join(cases) + ",\n"
-sql += "    ''\n"
-sql += ")\n"
-sql += "WHERE public_key = ''"
-print(sql)
-PYEOF
-
-    if [ -s /tmp/public_key_cases.sql ]; then
-        $CH_EXEC --multiquery < /tmp/public_key_cases.sql
-    fi
-    rm -f /tmp/public_key_cases.sql
-fi
+DROP DICTIONARY IF EXISTS wesense.ingester_public_keys;
+SQL
 
 echo
 echo "=== Backfill complete ==="

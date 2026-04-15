@@ -462,6 +462,9 @@ services:
       - GUARDIAN_SCOPE=${GUARDIAN_SCOPE:-*/*}
       - IROH_BOOTSTRAP_PEERS=${IROH_BOOTSTRAP_PEERS:-}
       - IROH_RELAY_URLS=${IROH_RELAY_URLS:-}
+      # Both archive-replicator and orbitdb use network_mode: host, so they
+      # reach each other on the host's localhost. Do NOT change this to the
+      # Docker service name — host-networked containers can't resolve it.
       - ORBITDB_URL=http://localhost:5200
       - ANNOUNCE_ADDRESS=${ANNOUNCE_ADDRESS:-}
       - WESENSE_PROXY=${WESENSE_PROXY:-}
@@ -1002,6 +1005,11 @@ services:
       - DATA_DIR=/app/data
       - ANNOUNCE_ADDRESS=${ANNOUNCE_ADDRESS:-}
       - ORBITDB_BOOTSTRAP_PEERS=${ORBITDB_BOOTSTRAP_PEERS:-bootstrap.wesense.earth}
+      # Node.js heap cap. Forces v8 to GC earlier instead of letting RSS drift.
+      # Tunable per-host: low for resource-constrained nodes (256), higher for hubs (1024+).
+      # Container limit (ORBITDB_MEM_LIMIT) should sit above this to leave room for
+      # libp2p buffers, blockstore caches, and other C++ state outside the v8 heap.
+      - NODE_OPTIONS=--max-old-space-size=${ORBITDB_HEAP_MB:-512} --optimize-for-size
       # Internal TLS
       - TLS_ENABLED=${TLS_ENABLED:-false}
       - TLS_CERTFILE=/app/certs/fullchain.pem

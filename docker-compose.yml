@@ -892,12 +892,16 @@ services:
       - ENABLE_SA=${ENABLE_GOVAQ_AU_SA:-false}
       - ENABLE_TAS=${ENABLE_GOVAQ_AU_TAS:-false}
       - VIC_EPA_API_KEY=${VIC_EPA_API_KEY:-}
+      # OrbitDB (host-network, reached via host-gateway)
+      - ORBITDB_URL=${ORBITDB_URL:-http://wesense-orbitdb:5200}
       # Logging
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       # Internal TLS
       - TLS_ENABLED=${TLS_ENABLED:-false}
       - TLS_CA_CERTFILE=/app/certs/ca.pem
       - TZ=${TZ:-Australia/Sydney}
+    extra_hosts:
+      - "wesense-orbitdb:host-gateway"
     restart: always
     networks:
       - wesense-net

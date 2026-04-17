@@ -1014,6 +1014,9 @@ services:
       # NODE_OPTIONS_EXTRA allows per-host diagnostic flags (e.g. --trace-gc)
       # without overriding the heap cap. See .env.sample Diagnostic Options.
       - NODE_OPTIONS=--max-old-space-size=${ORBITDB_HEAP_MB:-512} ${NODE_OPTIONS_EXTRA:-}
+      # Diagnostic flags — see .env.sample Diagnostic Options.
+      - GC_PAUSE_WARN_MS=${GC_PAUSE_WARN_MS:-}
+      - TEARDOWN_TRACE=${TEARDOWN_TRACE:-}
       # Internal TLS
       - TLS_ENABLED=${TLS_ENABLED:-false}
       - TLS_CERTFILE=/app/certs/fullchain.pem

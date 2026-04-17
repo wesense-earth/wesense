@@ -1011,7 +1011,9 @@ services:
       # libp2p buffers, blockstore caches, and other C++ state outside the v8 heap.
       # NOTE: only Node-level flags on the NODE_OPTIONS allowlist can be set here.
       # V8 flags like --optimize-for-size are rejected by Node for security.
-      - NODE_OPTIONS=--max-old-space-size=${ORBITDB_HEAP_MB:-512}
+      # NODE_OPTIONS_EXTRA allows per-host diagnostic flags (e.g. --trace-gc)
+      # without overriding the heap cap. See .env.sample Diagnostic Options.
+      - NODE_OPTIONS=--max-old-space-size=${ORBITDB_HEAP_MB:-512} ${NODE_OPTIONS_EXTRA:-}
       # Internal TLS
       - TLS_ENABLED=${TLS_ENABLED:-false}
       - TLS_CERTFILE=/app/certs/fullchain.pem

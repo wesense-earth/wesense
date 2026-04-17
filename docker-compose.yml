@@ -1017,7 +1017,12 @@ services:
       # Diagnostic flags — see .env.sample Diagnostic Options.
       - GC_PAUSE_WARN_MS=${GC_PAUSE_WARN_MS:-}
       - TEARDOWN_TRACE=${TEARDOWN_TRACE:-}
-      - CONNECTION_MONITOR_ABORT=${CONNECTION_MONITOR_ABORT:-true}
+      # Default false: libp2p's connection-monitor would otherwise tear down
+      # connections on any 10s-probe failure, producing ~30 TCP RSTs/hr/host
+      # under normal trans-continental latency. See .env.sample and
+      # StreamResetInvestigation.md. Set to true to restore upstream behaviour
+      # if needed for debugging.
+      - CONNECTION_MONITOR_ABORT=${CONNECTION_MONITOR_ABORT:-false}
       # Internal TLS
       - TLS_ENABLED=${TLS_ENABLED:-false}
       - TLS_CERTFILE=/app/certs/fullchain.pem

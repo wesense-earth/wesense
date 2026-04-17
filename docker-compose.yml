@@ -844,6 +844,70 @@ services:
         max-file: "5"
 
   # ===========================================================================
+  # Government Air Quality Ingester — Australia (Reference Stations)
+  # Profile: govaq-au (opt-in, combine with guardian or contributor)
+  # Polls Australian state/territory APIs for reference-grade readings.
+  # Sources: NSW DPIE, QLD DES, ACT Government (enabled by default).
+  #          VIC EPA (needs API key), SA EPA, TAS EPA (endpoints unverified).
+  # Configure sources in ingester-govaq-au/config/sources.json.
+  #
+  # Enable with:  docker compose --profile guardian --profile govaq-au up -d
+  # Or in .env:   COMPOSE_PROFILES=guardian,govaq-au
+  # ===========================================================================
+  ingester-govaq-au:
+    image: ${INGESTER_GOVAQ_AU_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-govaq-au:${IMAGE_TAG:-latest}}
+    container_name: wesense-ingester-govaq-au
+    profiles: ["govaq-au"]
+    depends_on:
+      config-check:
+        condition: service_completed_successfully
+      storage-broker:
+        condition: service_healthy
+      emqx:
+        condition: service_healthy
+        required: false
+    volumes:
+      - ./ingester-govaq-au/config:/app/config:ro
+      - ${DATA_DIR:-./data}/ingester-govaq-au/cache:/app/cache
+      - ${DATA_DIR:-./data}/ingester-govaq-au/logs:/app/logs
+      - ${DATA_DIR:-./data}/ingester-govaq-au/keys:/app/data/keys
+      - ${DATA_DIR:-./data}/certs:/app/certs:ro
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      # Storage broker (receives all readings via HTTP)
+      - GATEWAY_URL=http://storage-broker:8080
+      # MQTT output for decoded messages
+      - WESENSE_OUTPUT_BROKER=${MQTT_HOST:-emqx}
+      - WESENSE_OUTPUT_PORT=${MQTT_PORT:-1883}
+      - WESENSE_OUTPUT_USERNAME=${MQTT_USER}
+      - WESENSE_OUTPUT_PASSWORD=${MQTT_PASSWORD}
+      # Polling
+      - GOVAQ_POLL_INTERVAL=${GOVAQ_AU_POLL_INTERVAL:-900}
+      # Per-source toggles (override sources.json)
+      - ENABLE_NSW=${ENABLE_GOVAQ_AU_NSW:-true}
+      - ENABLE_QLD=${ENABLE_GOVAQ_AU_QLD:-true}
+      - ENABLE_ACT=${ENABLE_GOVAQ_AU_ACT:-true}
+      - ENABLE_VIC=${ENABLE_GOVAQ_AU_VIC:-false}
+      - ENABLE_SA=${ENABLE_GOVAQ_AU_SA:-false}
+      - ENABLE_TAS=${ENABLE_GOVAQ_AU_TAS:-false}
+      - VIC_EPA_API_KEY=${VIC_EPA_API_KEY:-}
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # Internal TLS
+      - TLS_ENABLED=${TLS_ENABLED:-false}
+      - TLS_CA_CERTFILE=/app/certs/ca.pem
+      - TZ=${TZ:-Australia/Sydney}
+    restart: always
+    networks:
+      - wesense-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ===========================================================================
   # Respiro - Environmental Sensor Map
   # Profiles: guardian, observer
   # Web dashboard displaying sensor data from ClickHouse.

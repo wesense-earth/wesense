@@ -1017,11 +1017,12 @@ services:
       # Diagnostic flags — see .env.sample Diagnostic Options.
       - GC_PAUSE_WARN_MS=${GC_PAUSE_WARN_MS:-}
       - TEARDOWN_TRACE=${TEARDOWN_TRACE:-}
-      # Default false: libp2p's connection-monitor would otherwise tear down
-      # connections on any 10s-probe failure, producing ~30 TCP RSTs/hr/host
-      # under normal trans-continental latency. See .env.sample and
-      # StreamResetInvestigation.md. Set to true to restore upstream behaviour
-      # if needed for debugging.
+      # libp2p's connection-monitor is off by default — we don't consume
+      # conn.rtt, yamux keepalive handles liveness, and the upstream probe
+      # loop has two scale problems (RST cascade + outbound stream-slot leak)
+      # documented in StreamResetInvestigation.md. Set ENABLED=true to
+      # re-enable for debugging; ABORT controls the RST behaviour if enabled.
+      - CONNECTION_MONITOR_ENABLED=${CONNECTION_MONITOR_ENABLED:-false}
       - CONNECTION_MONITOR_ABORT=${CONNECTION_MONITOR_ABORT:-false}
       # Internal TLS
       - TLS_ENABLED=${TLS_ENABLED:-false}

@@ -1017,6 +1017,7 @@ services:
       # Diagnostic flags — see .env.sample Diagnostic Options.
       - GC_PAUSE_WARN_MS=${GC_PAUSE_WARN_MS:-}
       - TEARDOWN_TRACE=${TEARDOWN_TRACE:-}
+      - CONNECTION_MONITOR_ABORT=${CONNECTION_MONITOR_ABORT:-true}
       # Internal TLS
       - TLS_ENABLED=${TLS_ENABLED:-false}
       - TLS_CERTFILE=/app/certs/fullchain.pem

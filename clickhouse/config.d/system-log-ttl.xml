@@ -1,0 +1,63 @@
+<!--
+  System log retention — prevents unbounded growth of ClickHouse internal logs.
+  Without TTLs, system tables grow indefinitely (text_log alone can reach 10+ GB).
+
+  Defaults:
+    text_log, trace_log, metric_log, part_log, processors_profile_log: 3 days
+    query_log: 7 days
+    asynchronous_metric_log: 1 day
+
+  To override, create a custom XML file in clickhouse/config.d/ with different
+  TTL values. Files in config.d are merged by ClickHouse — later files override
+  earlier ones.
+-->
+<clickhouse>
+    <text_log>
+        <database>system</database>
+        <table>text_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <ttl>event_date + toIntervalDay(3)</ttl>
+    </text_log>
+
+    <query_log>
+        <database>system</database>
+        <table>query_log</table>
+        <ttl>event_date + toIntervalDay(7)</ttl>
+    </query_log>
+
+    <trace_log>
+        <database>system</database>
+        <table>trace_log</table>
+        <ttl>event_date + toIntervalDay(3)</ttl>
+    </trace_log>
+
+    <metric_log>
+        <database>system</database>
+        <table>metric_log</table>
+        <ttl>event_date + toIntervalDay(3)</ttl>
+    </metric_log>
+
+    <asynchronous_metric_log>
+        <database>system</database>
+        <table>asynchronous_metric_log</table>
+        <ttl>event_date + toIntervalDay(1)</ttl>
+    </asynchronous_metric_log>
+
+    <part_log>
+        <database>system</database>
+        <table>part_log</table>
+        <ttl>event_date + toIntervalDay(3)</ttl>
+    </part_log>
+
+    <processors_profile_log>
+        <database>system</database>
+        <table>processors_profile_log</table>
+        <ttl>event_date + toIntervalDay(3)</ttl>
+    </processors_profile_log>
+
+    <query_metric_log>
+        <database>system</database>
+        <table>query_metric_log</table>
+        <ttl>event_date + toIntervalDay(3)</ttl>
+    </query_metric_log>
+</clickhouse>

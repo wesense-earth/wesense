@@ -5,15 +5,15 @@
 #   contributor - Ingesters only (sends to remote MQTT hub)
 #   station     - Full local stack (EMQX + ClickHouse + Ingesters + Respiro)
 #   hub         - MQTT broker only (production mqtt.wesense.earth)
-#   downlink    - Meshtastic global downlink (add to station, hub operators only)
+#   downlink    - Meshtastic global downlink (add to guardian, hub operators only)
 #   observer    - Map + ClickHouse, receives data via Zenoh P2P
-#   guardian    - IPFS archiver (ClickHouse + OrbitDB + Archiver)
-#   researcher  - ClickHouse + IPFS (future)
+#   guardian    - Archive guardian (ClickHouse + OrbitDB + Storage Broker)
+#   researcher  - ClickHouse + archives (future)
 #
 # Quick start:
 #   1. Copy .env.sample to .env
 #   2. Edit .env with your values
-#   3. Run: docker compose --profile station up -d
+#   3. Run: docker compose --profile guardian up -d
 #   4. Access Respiro map at http://localhost:3000
 
 services:
@@ -24,7 +24,10 @@ services:
   config-check:
     image: busybox:latest
     container_name: wesense-config-check
-    profiles: ["hub", "station", "contributor", "observer", "downlink", "guardian"]
+    profiles: ["hub", "contributor", "downlink", "guardian", "bootstrap"]
+    depends_on:
+      cert-init:
+        condition: service_healthy
     environment:
       - CLICKHOUSE_ADMIN_PASSWORD=${CLICKHOUSE_ADMIN_PASSWORD:-}
       - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-}
@@ -38,9 +41,9 @@ services:
       - |
         ok=true
 
-        # ClickHouse passwords — required for station/observer/guardian profiles
+        # ClickHouse passwords — required for guardian profile
         case "$$COMPOSE_PROFILES" in
-          *station*|*observer*|*guardian*)
+          *guardian*)
             if [ -z "$$CLICKHOUSE_ADMIN_PASSWORD" ] || [ "$$CLICKHOUSE_ADMIN_PASSWORD" = "CHANGEME" ]; then
               echo "ERROR: CLICKHOUSE_ADMIN_PASSWORD must be set to a real password in .env (not empty, not CHANGEME)"
               ok=false
@@ -52,9 +55,9 @@ services:
             ;;
         esac
 
-        # EMQX dashboard password — required for hub/station profiles
+        # EMQX dashboard password — required for hub/guardian profiles
         case "$$COMPOSE_PROFILES" in
-          *hub*|*station*)
+          *hub*|*guardian*)
             if [ -z "$$EMQX_DASHBOARD_PASSWORD" ] || [ "$$EMQX_DASHBOARD_PASSWORD" = "CHANGEME" ]; then
               echo "ERROR: EMQX_DASHBOARD_PASSWORD must be set to a real password in .env (not empty, not CHANGEME)"
               ok=false
@@ -62,13 +65,17 @@ services:
             ;;
         esac
 
-        # MQTT credentials — optional, but warn if partially set
-        if [ -n "$$MQTT_USER" ] && [ -z "$$MQTT_PASSWORD" ]; then
-          echo "WARNING: MQTT_USER is set but MQTT_PASSWORD is empty — MQTT auth will not be enabled"
-        fi
-        if [ -z "$$MQTT_USER" ] && [ -z "$$MQTT_PASSWORD" ]; then
-          echo "NOTE: MQTT_USER/MQTT_PASSWORD not set — EMQX will allow anonymous connections"
-        fi
+        # MQTT credentials — only relevant when EMQX is running (hub/guardian)
+        case "$$COMPOSE_PROFILES" in
+          *hub*|*guardian*)
+            if [ -n "$$MQTT_USER" ] && [ -z "$$MQTT_PASSWORD" ]; then
+              echo "WARNING: MQTT_USER is set but MQTT_PASSWORD is empty — MQTT auth will not be enabled"
+            fi
+            if [ -z "$$MQTT_USER" ] && [ -z "$$MQTT_PASSWORD" ]; then
+              echo "NOTE: MQTT_USER/MQTT_PASSWORD not set — EMQX will allow anonymous connections"
+            fi
+            ;;
+        esac
 
         if [ "$$ok" = "false" ]; then
           echo "Fix the above errors in .env and try again."
@@ -80,7 +87,7 @@ services:
 
   # ===========================================================================
   # EMQX - MQTT Broker
-  # Profiles: hub, station
+  # Profiles: hub, guardian
   #
   # Ports exposed to host are configured in .env — see "Host Port Mapping".
   # For additional ports (dashboard, WebSocket, TLS, ClickHouse), copy
@@ -89,7 +96,7 @@ services:
   emqx:
     image: emqx/emqx:5.8.9
     container_name: wesense-emqx
-    profiles: ["hub", "station"]
+    profiles: ["hub", "guardian"]
     user: "0:0"
     depends_on:
       config-check:
@@ -98,10 +105,12 @@ services:
     command: ["/opt/emqx/bin/emqx", "foreground"]
     ports:
       - "${PORT_MQTT:-1883}:1883"
+      - "${PORT_MQTT_TLS:-8883}:8883"
+      - "${PORT_MQTT_WSS:-8084}:8084"
     volumes:
       - ${DATA_DIR:-./data}/emqx/data:/opt/emqx/data
       - ${DATA_DIR:-./data}/emqx/log:/opt/emqx/log
-      - ./certs:/opt/emqx/etc/certs:ro
+      - ${DATA_DIR:-./data}/certs/mqtt:/opt/emqx/etc/certs:ro
       - ./emqx/etc/emqx.conf:/opt/emqx/etc/emqx.conf:ro
       - ./emqx/scripts/init-auth.sh:/opt/emqx/scripts/init-auth.sh:ro
     environment:
@@ -116,11 +125,12 @@ services:
       - EMQX_DASHBOARD__DEFAULT_PASSWORD=${EMQX_DASHBOARD_PASSWORD:-public}
       # TLS listeners (disabled by default, enable in .env with certificates)
       - EMQX_LISTENERS__SSL__DEFAULT__ENABLED=${TLS_MQTT_ENABLED:-false}
-      - EMQX_LISTENERS__SSL__DEFAULT__SSL_OPTIONS__CERTFILE=${TLS_CERTFILE:-/opt/emqx/etc/certs/fullchain.pem}
-      - EMQX_LISTENERS__SSL__DEFAULT__SSL_OPTIONS__KEYFILE=${TLS_KEYFILE:-/opt/emqx/etc/certs/privkey.pem}
       - EMQX_LISTENERS__WSS__DEFAULT__ENABLED=${TLS_WS_ENABLED:-false}
-      - EMQX_LISTENERS__WSS__DEFAULT__SSL_OPTIONS__CERTFILE=${TLS_CERTFILE:-/opt/emqx/etc/certs/fullchain.pem}
-      - EMQX_LISTENERS__WSS__DEFAULT__SSL_OPTIONS__KEYFILE=${TLS_KEYFILE:-/opt/emqx/etc/certs/privkey.pem}
+      # Meshtastic forwarding to external maps (only enable on one host)
+      # Uses EMQX_ prefix convention for runtime config overrides
+      - EMQX_RULE_ENGINE__RULES__FORWARD_MSH_TO_BRIDGES__ENABLE=${MESHTASTIC_FORWARDING_ENABLED:-false}
+      - EMQX_BRIDGES__MQTT__MESHTASTIC_FWD_1__ENABLE=${MESHTASTIC_FWD_1_ENABLED:-false}
+      - EMQX_BRIDGES__MQTT__MESHTASTIC_FWD_2__ENABLE=${MESHTASTIC_FWD_2_ENABLED:-false}
       - TZ=${TZ:-Pacific/Auckland}
     healthcheck:
       test: ["CMD", "emqx", "ctl", "status"]
@@ -133,8 +143,134 @@ services:
       - wesense-net
 
   # ===========================================================================
+  # Certbot — Automatic Let's Encrypt TLS Certificates
+  # Profiles: tls
+  # Obtains and auto-renews certificates via DNS-01 challenge (Cloudflare).
+  # No port 80/443 needed. Writes certs to ${DATA_DIR}/certs/ (shared with EMQX).
+  #
+  # Enable with: COMPOSE_PROFILES=guardian,tls
+  # Required env vars: TLS_DOMAIN, CLOUDFLARE_API_TOKEN
+  # ===========================================================================
+  certbot:
+    image: certbot/dns-cloudflare:latest
+    container_name: wesense-certbot
+    profiles: ["tls"]
+    entrypoint: /scripts/certbot-entrypoint.sh
+    volumes:
+      - ${DATA_DIR:-./data}/certs:/certs
+      - ${DATA_DIR:-./data}/certbot:/etc/letsencrypt
+      - ./scripts/certbot-entrypoint.sh:/scripts/certbot-entrypoint.sh:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - TLS_DOMAIN=${TLS_DOMAIN:-}
+      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN:-}
+      - CERTBOT_EMAIL=${CERTBOT_EMAIL:-}
+      - CERTBOT_STAGING=${CERTBOT_STAGING:-false}
+      - CERT_OWNER=${PUID:-1000}
+    restart: always
+
+  # ===========================================================================
+  # Cert Manager — Auto-generate and renew self-signed TLS certs
+  # Generates certs on first start when TLS_ENABLED=true.
+  # Checks expiry daily and renews when <30 days remaining.
+  # ===========================================================================
+  cert-init:
+    image: alpine/openssl:latest
+    container_name: wesense-cert-init
+    profiles: ["hub", "contributor", "guardian", "bootstrap"]
+    volumes:
+      - ${DATA_DIR:-./data}/certs:/certs
+    environment:
+      - TLS_ENABLED=${TLS_ENABLED:-false}
+      - PUID=${PUID:-1000}
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        CERT_DAYS=3650
+        RENEW_THRESHOLD=2592000  # 30 days in seconds
+        SANS="DNS:emqx,DNS:clickhouse,DNS:storage-broker,DNS:archive-replicator,DNS:orbitdb,DNS:wesense-orbitdb,DNS:respiro,DNS:live-transport,DNS:zenoh-api,DNS:localhost,IP:127.0.0.1,IP:172.17.0.1"
+
+        generate_ca() {
+          echo "Generating new CA (valid 10 years)..."
+          openssl genrsa -out /certs/ca-key.pem 4096
+          openssl req -new -x509 -key /certs/ca-key.pem -out /certs/ca.pem -days 3650 -subj "/O=WeSense/CN=WeSense Deployment CA"
+        }
+
+        generate_service_cert() {
+          echo "Generating service certificate (valid 10 years)..."
+          openssl genrsa -out /certs/privkey.pem 2048
+          openssl req -new -key /certs/privkey.pem -out /tmp/service.csr -subj "/O=WeSense/CN=wesense-services" -addext "subjectAltName=$$SANS"
+          openssl x509 -req -in /tmp/service.csr -CA /certs/ca.pem -CAkey /certs/ca-key.pem -CAcreateserial -out /certs/cert.pem -days $$CERT_DAYS -copy_extensions copy
+          cat /certs/cert.pem /certs/ca.pem > /certs/fullchain.pem
+          rm -f /tmp/service.csr /certs/ca.srl
+          chown "$$PUID:$$PUID" /certs/fullchain.pem /certs/privkey.pem /certs/ca.pem /certs/cert.pem 2>/dev/null || true
+          chmod 640 /certs/ca-key.pem
+          chmod 644 /certs/privkey.pem /certs/ca.pem /certs/fullchain.pem /certs/cert.pem
+          echo "Service certificate generated"
+        }
+
+        cert_needs_renewal() {
+          if [ ! -f /certs/fullchain.pem ]; then
+            return 0  # needs generation
+          fi
+          # Check if cert expires within RENEW_THRESHOLD seconds
+          if ! openssl x509 -in /certs/fullchain.pem -checkend $$RENEW_THRESHOLD -noout 2>/dev/null; then
+            return 0  # expiring soon
+          fi
+          return 1  # cert is fine
+        }
+
+        if [ "$$TLS_ENABLED" != "true" ]; then
+          echo "TLS_ENABLED is not true — skipping cert management"
+          # Stay running so healthcheck passes (other services depend on us)
+          while true; do sleep 86400; done
+        fi
+
+        # Initial generation if needed
+        if [ ! -f /certs/ca.pem ] || [ ! -f /certs/ca-key.pem ]; then
+          generate_ca
+        fi
+
+        if cert_needs_renewal; then
+          generate_service_cert
+        else
+          EXPIRY=$$(openssl x509 -in /certs/fullchain.pem -enddate -noout 2>/dev/null | cut -d= -f2)
+          echo "Service certificate valid (expires: $$EXPIRY)"
+        fi
+
+        # Fix permissions on every startup.
+        # Private key is 640 owned by PUID — only app services can read it.
+        # ClickHouse runs as uid 101, so it gets its own copy with correct ownership.
+        chmod 640 /certs/ca-key.pem /certs/privkey.pem 2>/dev/null || true
+        chmod 644 /certs/ca.pem /certs/fullchain.pem /certs/cert.pem 2>/dev/null || true
+        chown "$$PUID:$$PUID" /certs/privkey.pem 2>/dev/null || true
+        # ClickHouse-specific copy (uid 101 = clickhouse user in the CH container)
+        cp /certs/privkey.pem /certs/privkey-clickhouse.pem 2>/dev/null || true
+        chown 101:101 /certs/privkey-clickhouse.pem 2>/dev/null || true
+        chmod 640 /certs/privkey-clickhouse.pem 2>/dev/null || true
+
+        # Stay running and check daily
+        echo "Cert manager running — checking expiry every 24 hours"
+        while true; do
+          sleep 86400
+          if cert_needs_renewal; then
+            echo "Certificate expiring within 30 days — renewing..."
+            generate_service_cert
+            echo "Certificate renewed. Services will pick up new cert on next connection."
+          fi
+        done
+    healthcheck:
+      test: ["CMD", "sh", "-c", "[ -f /certs/fullchain.pem ] || [ \"$$TLS_ENABLED\" != 'true' ]"]
+      interval: 5s
+      timeout: 2s
+      retries: 30
+      start_period: 30s
+    restart: always
+
+  # ===========================================================================
   # ClickHouse - Time Series Database
-  # Profiles: station, observer
+  # Profiles: guardian, observer
   # Creates both 'wesense' and 'wesense_respiro' databases on first start.
   # Services connect via Docker network internally. To access ClickHouse from
   # outside Docker (e.g., DBeaver, clickhouse-client), add a
@@ -143,16 +279,22 @@ services:
   clickhouse:
     image: clickhouse/clickhouse-server:24
     container_name: wesense-clickhouse
-    profiles: ["station", "observer", "guardian"]
+    profiles: ["guardian"]
     depends_on:
       config-check:
         condition: service_completed_successfully
+    entrypoint: /scripts/init-tls.sh
     # Set CLICKHOUSE_DATA_DIR in .env to store sensor data on a separate drive (e.g., HDD)
     # Defaults to DATA_DIR/clickhouse alongside other services
     volumes:
       - ${CLICKHOUSE_DATA_DIR:-${DATA_DIR:-./data}/clickhouse}/data:/var/lib/clickhouse
       - ${CLICKHOUSE_DATA_DIR:-${DATA_DIR:-./data}/clickhouse}/logs:/var/log/clickhouse-server
       - ./clickhouse/init:/docker-entrypoint-initdb.d:ro
+      - ./clickhouse/migrations:/migrations:ro
+      - ./clickhouse/config.d/system-log-ttl.xml:/etc/clickhouse-server/config.d/system-log-ttl.xml:ro
+      - ./clickhouse/scripts/init-tls.sh:/scripts/init-tls.sh:ro
+      - ./clickhouse/scripts/migrate.sh:/scripts/migrate.sh:ro
+      - ${DATA_DIR:-./data}/certs:/etc/clickhouse-server/certs:ro
     environment:
       - CLICKHOUSE_DB=${CLICKHOUSE_DB:-wesense}
       # Admin user — used by Docker image for init scripts and management
@@ -162,6 +304,7 @@ services:
       # App user — created by 00-create-app-user.sh on first start
       - CLICKHOUSE_APP_USER=${CLICKHOUSE_USER:-wesense}
       - CLICKHOUSE_APP_PASSWORD=${CLICKHOUSE_PASSWORD}
+      - TLS_ENABLED=${TLS_ENABLED:-false}
       - TZ=${TZ:-Pacific/Auckland}
     cap_add:
       - SYS_NICE            # Suppresses "get_mempolicy: Operation not permitted" NUMA warnings
@@ -181,14 +324,14 @@ services:
 
   # ===========================================================================
   # Zenoh Router — P2P data distribution
-  # Profiles: station
+  # Profiles: guardian
   # Provides a local Zenoh router for ingesters to publish signed readings.
   # Contributors connect to a remote router instead.
   # ===========================================================================
   zenohd:
     image: eclipse/zenoh:1.7.2
     container_name: wesense-zenohd
-    profiles: ["station"]
+    profiles: ["guardian"]
     depends_on:
       config-check:
         condition: service_completed_successfully
@@ -200,7 +343,143 @@ services:
       - ./zenoh/proxy-entrypoint.sh:/proxy-entrypoint.sh:ro
     entrypoint: ["/bin/sh", "/proxy-entrypoint.sh"]
     environment:
-      - ZENOH_PROXY_ROUTER=${ZENOH_PROXY_ROUTER:-}
+      - WESENSE_PROXY=${WESENSE_PROXY:-}
+      - PORT_ZENOH=${WESENSE_PROXY_ZENOH_PORT:-${PORT_ZENOH:-7447}}
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ===========================================================================
+  # Storage Broker — HTTP API for sensor reading ingestion
+  # Profiles: contributor, guardian
+  # Receives readings from ingesters via POST /readings, geocodes, deduplicates,
+  # and writes to ClickHouse and Iroh (via archive-replicator).
+  # ===========================================================================
+  storage-broker:
+    image: ${STORAGE_BROKER_IMAGE:-ghcr.io/wesense-earth/wesense-storage-broker:${IMAGE_TAG:-latest}}
+    container_name: wesense-storage-broker
+    profiles: ["contributor", "guardian"]
+    deploy:
+      resources:
+        limits:
+          memory: ${STORAGE_BROKER_MEM_LIMIT:-1G}
+          cpus: '1'
+    depends_on:
+      config-check:
+        condition: service_completed_successfully
+      clickhouse:
+        condition: service_healthy
+        required: false
+      archive-replicator:
+        condition: service_healthy
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      # ClickHouse connection
+      - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-clickhouse}
+      - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
+      - CLICKHOUSE_DATABASE=${CLICKHOUSE_DB:-wesense}
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-wesense}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+      - CLICKHOUSE_BATCH_SIZE=${CLICKHOUSE_BATCH_SIZE:-100}
+      - CLICKHOUSE_FLUSH_INTERVAL=${CLICKHOUSE_FLUSH_INTERVAL:-10}
+      # Signing and trust
+      - KEY_DIR=/app/data/keys
+      - TRUST_FILE=/app/data/trust_list.json
+      # Iroh storage
+      - ARCHIVE_REPLICATOR_URL=http://archive-replicator:4400
+      # Archive schedule
+      - ARCHIVE_INTERVAL_HOURS=${ARCHIVE_INTERVAL_HOURS:-4}
+      - ARCHIVE_START_DATE=${ARCHIVE_START_DATE:-}
+      # Internal TLS
+      - TLS_ENABLED=${TLS_ENABLED:-false}
+      - TLS_CERTFILE=/app/certs/fullchain.pem
+      - TLS_KEYFILE=/app/certs/privkey.pem
+      - TLS_CA_CERTFILE=/app/certs/ca.pem
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - TZ=${TZ:-Pacific/Auckland}
+    extra_hosts:
+      - "wesense-orbitdb:host-gateway"
+      - "archive-replicator:host-gateway"
+    volumes:
+      - ${DATA_DIR:-./data}/storage-broker/keys:/app/data/keys
+      - ${DATA_DIR:-./data}/storage-broker/archives:/app/data/archives
+      - ${DATA_DIR:-./data}/certs:/app/certs:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request, ssl, os; ctx=ssl.create_default_context() if os.getenv('TLS_ENABLED','')!='true' else ssl._create_unverified_context(); urllib.request.urlopen(('https' if os.getenv('TLS_ENABLED','')=='true' else 'http')+'://localhost:8080/health', context=ctx)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: always
+    networks:
+      - wesense-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ===========================================================================
+  # Archive Replicator — Distributed Blob Storage for Archives
+  # Profiles: guardian
+  # Rust service wrapping iroh-blobs + iroh-gossip. The storage broker POSTs archives
+  # here. Handles BLAKE3 content-addressed storage
+  # and gossip announcements to other nodes when new archives are available.
+  # ===========================================================================
+  archive-replicator:
+    image: ${ARCHIVE_REPLICATOR_IMAGE:-ghcr.io/wesense-earth/wesense-archive-replicator:${IMAGE_TAG:-latest}}
+    container_name: wesense-archive-replicator
+    profiles: ["contributor", "guardian"]
+    # Host networking enables mDNS multicast for automatic LAN peer discovery.
+    # Archive replicators on the same LAN find each other directly without OrbitDB.
+    # Other containers reach the HTTP API (port 4400) via extra_hosts: host-gateway.
+    network_mode: host
+    deploy:
+      resources:
+        limits:
+          memory: ${ARCHIVE_REPLICATOR_MEM_LIMIT:-2G}
+          cpus: ${ARCHIVE_REPLICATOR_CPU_LIMIT:-2}
+    depends_on:
+      config-check:
+        condition: service_completed_successfully
+      orbitdb:
+        condition: service_started
+        required: false
+    volumes:
+      - ${DATA_DIR:-./data}/archive-replicator:/app/data
+      - ${DATA_DIR:-./data}/certs:/app/certs:ro
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - IROH_SIDECAR_PORT=4400
+      - IROH_DATA_DIR=/app/data
+      - IROH_GOSSIP_TOPIC=${IROH_GOSSIP_TOPIC:-wesense-archives}
+      - IROH_QUIC_PORT=${PORT_IROH_QUIC:-4401}
+      - GUARDIAN_SCOPE=${GUARDIAN_SCOPE:-*/*}
+      - IROH_BOOTSTRAP_PEERS=${IROH_BOOTSTRAP_PEERS:-}
+      - IROH_RELAY_URLS=${IROH_RELAY_URLS:-}
+      # Both archive-replicator and orbitdb use network_mode: host, so they
+      # reach each other on the host's localhost. Do NOT change this to the
+      # Docker service name — host-networked containers can't resolve it.
+      - ORBITDB_URL=http://localhost:5200
+      - ANNOUNCE_ADDRESS=${ANNOUNCE_ADDRESS:-}
+      - WESENSE_PROXY=${WESENSE_PROXY:-}
+      - WESENSE_PROXY_IROH_PORT=${WESENSE_PROXY_IROH_PORT:-}
+      - RUST_LOG=${RUST_LOG:-wesense_archive_replicator=info}
+      - TLS_ENABLED=${TLS_ENABLED:-false}
+      - TLS_CERTFILE=/app/certs/fullchain.pem
+      - TLS_KEYFILE=/app/certs/privkey.pem
+      - TZ=${TZ:-Pacific/Auckland}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- --no-check-certificate https://localhost:4400/status 2>/dev/null || wget -qO- http://localhost:4400/status 2>/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     restart: always
     logging:
       driver: "json-file"
@@ -210,21 +489,21 @@ services:
 
   # ===========================================================================
   # Meshtastic Ingester (Unified: public + community)
-  # Profiles: contributor, station
+  # Profiles: contributor, guardian
   # Community mode (default): receives from a local Meshtastic node via EMQX
   # Public mode: subscribes to mqtt.meshtastic.org (hub operators only)
-  # depends_on with required: false — waits for EMQX/ClickHouse in station
+  # depends_on with required: false — waits for EMQX/ClickHouse in guardian
   # profile, skips gracefully in contributor profile (connects to remote hosts).
   # ===========================================================================
   ingester-meshtastic:
     image: ${INGESTER_MESHTASTIC_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-meshtastic:${IMAGE_TAG:-latest}}
     container_name: wesense-ingester-meshtastic
-    profiles: ["contributor", "station"]
-    deploy:
-      replicas: ${INGESTER_MESHTASTIC:-1}
+    profiles: ["meshtastic"]
     depends_on:
       config-check:
         condition: service_completed_successfully
+      storage-broker:
+        condition: service_healthy
       emqx:
         condition: service_healthy
         required: false
@@ -244,42 +523,39 @@ services:
       - ${DATA_DIR:-./data}/ingester-meshtastic/cache:/app/cache
       - ${DATA_DIR:-./data}/ingester-meshtastic/logs:/app/logs
       - ${DATA_DIR:-./data}/ingester-meshtastic/keys:/app/data/keys
+      - ${DATA_DIR:-./data}/certs:/app/certs:ro
     environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      # Storage broker (receives all readings via HTTP)
+      - GATEWAY_URL=http://storage-broker:8080
       # MQTT input (local EMQX where Meshtastic node pushes)
       - MQTT_BROKER=${MQTT_HOST:-emqx}
       - MQTT_PORT=${MQTT_PORT:-1883}
       - MQTT_USERNAME=${MQTT_USER}
       - MQTT_PASSWORD=${MQTT_PASSWORD}
-      # ClickHouse connection (optional, gracefully handles unavailable)
+      # ClickHouse connection (read-only, used by ZenohQueryable)
       - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-clickhouse}
       - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
       - CLICKHOUSE_DATABASE=${CLICKHOUSE_DB:-wesense}
       - CLICKHOUSE_USER=${CLICKHOUSE_USER:-wesense}
       - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
-      - CLICKHOUSE_BATCH_SIZE=${CLICKHOUSE_BATCH_SIZE:-100}
-      - CLICKHOUSE_FLUSH_INTERVAL=${CLICKHOUSE_FLUSH_INTERVAL:-10}
       # MQTT output for publishing decoded messages
       - WESENSE_OUTPUT_BROKER=${MQTT_HOST:-emqx}
       - WESENSE_OUTPUT_PORT=${MQTT_PORT:-1883}
       - WESENSE_OUTPUT_USERNAME=${MQTT_USER}
       - WESENSE_OUTPUT_PASSWORD=${MQTT_PASSWORD}
-      # Zenoh P2P (optional)
-      - ZENOH_ENABLED=${ZENOH_ENABLED:-true}
-      - ZENOH_MODE=${ZENOH_MODE:-client}
-      - ZENOH_ROUTERS=${ZENOH_ROUTERS:-tcp/zenohd:7447}
-      - ZENOH_KEY_PREFIX=${ZENOH_KEY_PREFIX:-wesense/v2/live}
-      - ZENOH_KEY_DIR=/app/data/keys
       # OrbitDB registry
       - ORBITDB_ENABLED=${ORBITDB_ENABLED:-true}
       - ORBITDB_URL=${ORBITDB_URL:-http://wesense-orbitdb:5200}
       - ORBITDB_SYNC_INTERVAL=${ORBITDB_SYNC_INTERVAL:-3600}
-      # WAN peer discovery (registers zenoh_endpoint in OrbitDB node registry)
       - ANNOUNCE_ADDRESS=${ANNOUNCE_ADDRESS:-}
-      - ZENOH_ANNOUNCE_ADDRESS=${ZENOH_ANNOUNCE_ADDRESS:-}
-      - PORT_ZENOH=${PORT_ZENOH:-7447}
       # Logging
       - DEBUG=${DEBUG:-false}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # Internal TLS
+      - TLS_ENABLED=${TLS_ENABLED:-false}
+      - TLS_CA_CERTFILE=/app/certs/ca.pem
       - TZ=${TZ:-Pacific/Auckland}
     restart: always
     networks:
@@ -292,24 +568,26 @@ services:
 
   # ===========================================================================
   # Meshtastic Downlink Ingester (Global)
-  # Profile: downlink (opt-in, combine with station)
+  # Profile: downlink (opt-in, combine with guardian)
   # Subscribes to mqtt.meshtastic.org and community servers worldwide.
   # Generates significant MQTT traffic — only run this if you are a hub operator
   # or intentionally collecting global Meshtastic environmental data.
   #
-  # Enable with:  docker compose --profile station --profile downlink up -d
-  # Or in .env:   COMPOSE_PROFILES=station,downlink
+  # Enable with:  docker compose --profile guardian --profile downlink up -d
+  # Or in .env:   COMPOSE_PROFILES=guardian,downlink
   #
   # Edit ingester-meshtastic-downlink/config/mqtt_regions.json to enable/disable
   # specific regions.
   # ===========================================================================
   ingester-meshtastic-downlink:
     image: ${INGESTER_MESHTASTIC_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-meshtastic:${IMAGE_TAG:-latest}}
-    container_name: wesense-meshtastic-downlink
-    profiles: ["downlink"]
+    container_name: wesense-ingester-meshtastic-downlink
+    profiles: ["meshtastic-downlink"]
     depends_on:
       config-check:
         condition: service_completed_successfully
+      storage-broker:
+        condition: service_healthy
       emqx:
         condition: service_healthy
         required: false
@@ -330,38 +608,35 @@ services:
       - ${DATA_DIR:-./data}/ingester-meshtastic-downlink/logs:/app/logs
       - ./ingester-meshtastic-downlink/config:/app/config:ro
       - ${DATA_DIR:-./data}/ingester-meshtastic-downlink/keys:/app/data/keys
+      - ${DATA_DIR:-./data}/certs:/app/certs:ro
     environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
       - MESHTASTIC_MODE=downlink
-      # ClickHouse connection
+      # Storage broker (receives all readings via HTTP)
+      - GATEWAY_URL=http://storage-broker:8080
+      # ClickHouse connection (read-only, used by ZenohQueryable)
       - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-clickhouse}
       - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
       - CLICKHOUSE_DATABASE=${CLICKHOUSE_DB:-wesense}
       - CLICKHOUSE_USER=${CLICKHOUSE_USER:-wesense}
       - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
-      - CLICKHOUSE_BATCH_SIZE=${CLICKHOUSE_BATCH_SIZE:-100}
-      - CLICKHOUSE_FLUSH_INTERVAL=${CLICKHOUSE_FLUSH_INTERVAL:-10}
       # MQTT output for publishing decoded messages
       - WESENSE_OUTPUT_BROKER=${MQTT_HOST:-emqx}
       - WESENSE_OUTPUT_PORT=${MQTT_PORT:-1883}
       - WESENSE_OUTPUT_USERNAME=${MQTT_USER}
       - WESENSE_OUTPUT_PASSWORD=${MQTT_PASSWORD}
-      # Zenoh P2P (optional)
-      - ZENOH_ENABLED=${ZENOH_ENABLED:-true}
-      - ZENOH_MODE=${ZENOH_MODE:-client}
-      - ZENOH_ROUTERS=${ZENOH_ROUTERS:-tcp/zenohd:7447}
-      - ZENOH_KEY_PREFIX=${ZENOH_KEY_PREFIX:-wesense/v2/live}
-      - ZENOH_KEY_DIR=/app/data/keys
       # OrbitDB registry
       - ORBITDB_ENABLED=${ORBITDB_ENABLED:-true}
       - ORBITDB_URL=${ORBITDB_URL:-http://wesense-orbitdb:5200}
       - ORBITDB_SYNC_INTERVAL=${ORBITDB_SYNC_INTERVAL:-3600}
-      # WAN peer discovery (registers zenoh_endpoint in OrbitDB node registry)
       - ANNOUNCE_ADDRESS=${ANNOUNCE_ADDRESS:-}
-      - ZENOH_ANNOUNCE_ADDRESS=${ZENOH_ANNOUNCE_ADDRESS:-}
-      - PORT_ZENOH=${PORT_ZENOH:-7447}
       # Logging
       - DEBUG=${DEBUG:-false}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # Internal TLS
+      - TLS_ENABLED=${TLS_ENABLED:-false}
+      - TLS_CA_CERTFILE=/app/certs/ca.pem
       - TZ=${TZ:-Pacific/Auckland}
     restart: always
     networks:
@@ -374,19 +649,24 @@ services:
 
   # ===========================================================================
   # WeSense Ingester (Unified: WiFi + LoRa + TTN webhook)
-  # Profiles: contributor, station
+  # Profiles: contributor, guardian
   # Subscribes to wesense/v2/wifi/# and wesense/v2/lora/# topics
   # Optionally runs TTN webhook HTTP server (TTN_WEBHOOK_ENABLED=true)
   # ===========================================================================
   ingester-wesense:
     image: ${INGESTER_WESENSE_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-wesense:${IMAGE_TAG:-latest}}
     container_name: wesense-ingester-wesense
-    profiles: ["contributor", "station"]
+    profiles: ["wesense"]
     deploy:
-      replicas: ${INGESTER_WESENSE:-1}
+      resources:
+        limits:
+          memory: ${INGESTER_WESENSE_MEM_LIMIT:-1G}
+          cpus: '1'
     depends_on:
       config-check:
         condition: service_completed_successfully
+      storage-broker:
+        condition: service_healthy
       emqx:
         condition: service_healthy
         required: false
@@ -406,44 +686,41 @@ services:
       - ${DATA_DIR:-./data}/ingester-wesense/cache:/app/cache
       - ${DATA_DIR:-./data}/ingester-wesense/logs:/app/logs
       - ${DATA_DIR:-./data}/ingester-wesense/keys:/app/data/keys
+      - ${DATA_DIR:-./data}/certs:/app/certs:ro
     environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      # Storage broker (receives all readings via HTTP)
+      - GATEWAY_URL=http://storage-broker:8080
       # MQTT input (subscribe to sensor topics)
       - MQTT_BROKER=${MQTT_HOST:-emqx}
       - MQTT_PORT=${MQTT_PORT:-1883}
       - MQTT_USERNAME=${MQTT_USER}
       - MQTT_PASSWORD=${MQTT_PASSWORD}
-      # ClickHouse connection (optional, gracefully handles unavailable)
+      # ClickHouse connection (read-only, used by ZenohQueryable)
       - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-clickhouse}
       - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
       - CLICKHOUSE_DATABASE=${CLICKHOUSE_DB:-wesense}
       - CLICKHOUSE_USER=${CLICKHOUSE_USER:-wesense}
       - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
-      - CLICKHOUSE_BATCH_SIZE=${CLICKHOUSE_BATCH_SIZE:-100}
-      - CLICKHOUSE_FLUSH_INTERVAL=${CLICKHOUSE_FLUSH_INTERVAL:-10}
       # MQTT output for decoded messages
       - WESENSE_OUTPUT_BROKER=${MQTT_HOST:-emqx}
       - WESENSE_OUTPUT_PORT=${MQTT_PORT:-1883}
       - WESENSE_OUTPUT_USERNAME=${MQTT_USER}
       - WESENSE_OUTPUT_PASSWORD=${MQTT_PASSWORD}
-      # Zenoh P2P (optional)
-      - ZENOH_ENABLED=${ZENOH_ENABLED:-true}
-      - ZENOH_MODE=${ZENOH_MODE:-client}
-      - ZENOH_ROUTERS=${ZENOH_ROUTERS:-tcp/zenohd:7447}
-      - ZENOH_KEY_PREFIX=${ZENOH_KEY_PREFIX:-wesense/v2/live}
-      - ZENOH_KEY_DIR=/app/data/keys
       # OrbitDB registry
       - ORBITDB_ENABLED=${ORBITDB_ENABLED:-true}
       - ORBITDB_URL=${ORBITDB_URL:-http://wesense-orbitdb:5200}
       - ORBITDB_SYNC_INTERVAL=${ORBITDB_SYNC_INTERVAL:-3600}
-      # WAN peer discovery (registers zenoh_endpoint in OrbitDB node registry)
       - ANNOUNCE_ADDRESS=${ANNOUNCE_ADDRESS:-}
-      - ZENOH_ANNOUNCE_ADDRESS=${ZENOH_ANNOUNCE_ADDRESS:-}
-      - PORT_ZENOH=${PORT_ZENOH:-7447}
       # TTN webhook (optional)
       - TTN_WEBHOOK_ENABLED=${TTN_WEBHOOK_ENABLED:-false}
       - TTN_WEBHOOK_PORT=${TTN_WEBHOOK_PORT:-5000}
       # Logging
       - DEBUG=${DEBUG:-false}
+      # Internal TLS
+      - TLS_ENABLED=${TLS_ENABLED:-false}
+      - TLS_CA_CERTFILE=/app/certs/ca.pem
       - TZ=${TZ:-Pacific/Auckland}
     # TTN webhook port — uncomment if receiving The Things Network uplinks
     # directly (not needed if using cloudflared tunnel or similar)
@@ -460,7 +737,7 @@ services:
 
   # ===========================================================================
   # Home Assistant Ingester
-  # Profiles: contributor, station
+  # Profiles: contributor, guardian
   # Pulls sensor data from Home Assistant (WebSocket/REST)
   # Critical: loop prevention filters exclude WeSense ESP32 devices
   #
@@ -470,38 +747,36 @@ services:
   ingester-homeassistant:
     image: ${INGESTER_HA_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-homeassistant:${IMAGE_TAG:-latest}}
     container_name: wesense-ingester-homeassistant
-    profiles: ["contributor", "station"]
-    deploy:
-      replicas: ${INGESTER_HOMEASSISTANT:-1}
+    profiles: ["homeassistant"]
     depends_on:
       config-check:
         condition: service_completed_successfully
-      emqx:
+      storage-broker:
         condition: service_healthy
-        required: false
-      clickhouse:
+      emqx:
         condition: service_healthy
         required: false
     volumes:
       - ./ingester-homeassistant/config:/app/config:ro
       - ${DATA_DIR:-./data}/ingester-homeassistant/logs:/app/logs
+      - ${DATA_DIR:-./data}/certs:/app/certs:ro
     environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      # Storage broker (receives all readings via HTTP)
+      - GATEWAY_URL=http://storage-broker:8080
       # Home Assistant connection
       - HA_URL=${HA_URL:-http://homeassistant.local:8123}
       - HA_ACCESS_TOKEN=${HA_ACCESS_TOKEN}
       - NODE_NAME=${HA_NODE_NAME:-}
-      # ClickHouse connection (optional, gracefully handles unavailable)
-      - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-clickhouse}
-      - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
-      - CLICKHOUSE_DATABASE=${CLICKHOUSE_DB:-wesense}
-      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-wesense}
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
       # MQTT output for decoded messages
       - LOCAL_MQTT_BROKER=${MQTT_HOST:-emqx}
       - LOCAL_MQTT_PORT=${MQTT_PORT:-1883}
       # Options
-      - DISABLE_CLICKHOUSE=${DISABLE_CLICKHOUSE:-false}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # Internal TLS
+      - TLS_ENABLED=${TLS_ENABLED:-false}
+      - TLS_CA_CERTFILE=/app/certs/ca.pem
       - TZ=${TZ:-Pacific/Auckland}
     restart: always
     networks:
@@ -513,8 +788,132 @@ services:
         max-file: "5"
 
   # ===========================================================================
+  # Government Air Quality Ingester — New Zealand (Reference Stations)
+  # Profile: govaq-nz (opt-in, combine with guardian or contributor)
+  # Polls NZ regional council APIs for reference-grade readings.
+  # Sources: ECan, Tasman, Nelson, Marlborough, Hawke's Bay, Gisborne,
+  #          Horizons, West Coast (via Hilltop API).
+  # Configure sources in ingester-govaq-nz/config/sources.json.
+  #
+  # Enable with:  docker compose --profile guardian --profile govaq-nz up -d
+  # Or in .env:   COMPOSE_PROFILES=guardian,govaq-nz
+  # ===========================================================================
+  ingester-govaq-nz:
+    image: ${INGESTER_GOVAQ_NZ_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-govaq-nz:${IMAGE_TAG:-latest}}
+    container_name: wesense-ingester-govaq-nz
+    profiles: ["govaq-nz"]
+    depends_on:
+      config-check:
+        condition: service_completed_successfully
+      storage-broker:
+        condition: service_healthy
+      emqx:
+        condition: service_healthy
+        required: false
+    volumes:
+      - ./ingester-govaq-nz/config:/app/config:ro
+      - ${DATA_DIR:-./data}/ingester-govaq-nz/cache:/app/cache
+      - ${DATA_DIR:-./data}/ingester-govaq-nz/logs:/app/logs
+      - ${DATA_DIR:-./data}/ingester-govaq-nz/keys:/app/data/keys
+      - ${DATA_DIR:-./data}/certs:/app/certs:ro
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      # Storage broker (receives all readings via HTTP)
+      - GATEWAY_URL=http://storage-broker:8080
+      # MQTT output for decoded messages
+      - WESENSE_OUTPUT_BROKER=${MQTT_HOST:-emqx}
+      - WESENSE_OUTPUT_PORT=${MQTT_PORT:-1883}
+      - WESENSE_OUTPUT_USERNAME=${MQTT_USER}
+      - WESENSE_OUTPUT_PASSWORD=${MQTT_PASSWORD}
+      # Polling
+      - GOVAQ_POLL_INTERVAL=${GOVAQ_POLL_INTERVAL:-600}
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # Internal TLS
+      - TLS_ENABLED=${TLS_ENABLED:-false}
+      - TLS_CA_CERTFILE=/app/certs/ca.pem
+      - TZ=${TZ:-Pacific/Auckland}
+    restart: always
+    networks:
+      - wesense-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ===========================================================================
+  # Government Air Quality Ingester — Australia (Reference Stations)
+  # Profile: govaq-au (opt-in, combine with guardian or contributor)
+  # Polls Australian state/territory APIs for reference-grade readings.
+  # Sources: NSW DPIE, QLD DES, ACT Government (enabled by default).
+  #          VIC EPA (needs API key), SA EPA, TAS EPA (endpoints unverified).
+  # Configure sources in ingester-govaq-au/config/sources.json.
+  #
+  # Enable with:  docker compose --profile guardian --profile govaq-au up -d
+  # Or in .env:   COMPOSE_PROFILES=guardian,govaq-au
+  # ===========================================================================
+  ingester-govaq-au:
+    image: ${INGESTER_GOVAQ_AU_IMAGE:-ghcr.io/wesense-earth/wesense-ingester-govaq-au:${IMAGE_TAG:-latest}}
+    container_name: wesense-ingester-govaq-au
+    profiles: ["govaq-au"]
+    depends_on:
+      config-check:
+        condition: service_completed_successfully
+      storage-broker:
+        condition: service_healthy
+      emqx:
+        condition: service_healthy
+        required: false
+    volumes:
+      - ./ingester-govaq-au/config:/app/config:ro
+      - ${DATA_DIR:-./data}/ingester-govaq-au/cache:/app/cache
+      - ${DATA_DIR:-./data}/ingester-govaq-au/logs:/app/logs
+      - ${DATA_DIR:-./data}/ingester-govaq-au/keys:/app/data/keys
+      - ${DATA_DIR:-./data}/certs:/app/certs:ro
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      # Storage broker (receives all readings via HTTP)
+      - GATEWAY_URL=http://storage-broker:8080
+      # MQTT output for decoded messages
+      - WESENSE_OUTPUT_BROKER=${MQTT_HOST:-emqx}
+      - WESENSE_OUTPUT_PORT=${MQTT_PORT:-1883}
+      - WESENSE_OUTPUT_USERNAME=${MQTT_USER}
+      - WESENSE_OUTPUT_PASSWORD=${MQTT_PASSWORD}
+      # Polling
+      - GOVAQ_POLL_INTERVAL=${GOVAQ_AU_POLL_INTERVAL:-900}
+      # Per-source toggles (override sources.json)
+      - ENABLE_NSW=${ENABLE_GOVAQ_AU_NSW:-true}
+      - ENABLE_QLD=${ENABLE_GOVAQ_AU_QLD:-true}
+      - ENABLE_ACT=${ENABLE_GOVAQ_AU_ACT:-true}
+      - ENABLE_VIC=${ENABLE_GOVAQ_AU_VIC:-false}
+      - ENABLE_SA=${ENABLE_GOVAQ_AU_SA:-false}
+      - ENABLE_TAS=${ENABLE_GOVAQ_AU_TAS:-false}
+      - VIC_EPA_API_KEY=${VIC_EPA_API_KEY:-}
+      # OrbitDB (host-network, reached via host-gateway)
+      - ORBITDB_URL=${ORBITDB_URL:-http://wesense-orbitdb:5200}
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # Internal TLS
+      - TLS_ENABLED=${TLS_ENABLED:-false}
+      - TLS_CA_CERTFILE=/app/certs/ca.pem
+      - TZ=${TZ:-Australia/Sydney}
+    extra_hosts:
+      - "wesense-orbitdb:host-gateway"
+    restart: always
+    networks:
+      - wesense-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ===========================================================================
   # Respiro - Environmental Sensor Map
-  # Profiles: station, observer
+  # Profiles: guardian, observer
   # Web dashboard displaying sensor data from ClickHouse.
   # Typically served behind a reverse proxy (SWAG, Caddy, Nginx Proxy Manager)
   # which handles TLS/letsencrypt — Respiro itself serves plain HTTP.
@@ -522,7 +921,7 @@ services:
   respiro:
     image: ${RESPIRO_IMAGE:-ghcr.io/wesense-earth/wesense-respiro:${IMAGE_TAG:-latest}}
     container_name: wesense-respiro
-    profiles: ["station", "observer"]
+    profiles: ["guardian"]
     ports:
       - "${PORT_RESPIRO:-3001}:3000"
     volumes:
@@ -530,7 +929,10 @@ services:
       # Docker socket for container resource stats on the Stats dashboard.
       # Set DOCKER_SOCK=/var/run/docker.sock and DOCKER_STATS_ENABLED=true in .env.
       - ${DOCKER_SOCK:-/dev/null}:/var/run/docker.sock:ro
+      - ${DATA_DIR:-./data}/certs:/app/certs:ro
     environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
       # ClickHouse connection
       - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-clickhouse}
       - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
@@ -549,10 +951,12 @@ services:
       - ZENOH_API_URL=${ZENOH_API_URL:-http://zenoh-api:5100}
       # OrbitDB API (optional — enables /api/stats/orbitdb|nodes|trust endpoints)
       - ORBITDB_URL=${ORBITDB_URL:-http://wesense-orbitdb:5200}
-      # Kubo IPFS API (optional — enables /api/stats/archives endpoint)
-      - KUBO_API_URL=${KUBO_API_URL:-http://kubo:5001}
-      # IPFS public gateway for archive links on the Stats page
-      - IPFS_GATEWAY_URL=${IPFS_GATEWAY_URL:-https://dweb.link}
+      # Storage Broker API (enables archive stats panel in Stats view)
+      - GATEWAY_URL=http://storage-broker:8080
+      # Archive Replicator API (optional — enables /api/stats/iroh endpoint)
+      - ARCHIVE_REPLICATOR_URL=${ARCHIVE_REPLICATOR_URL:-http://archive-replicator:4400}
+      # Live Transport API (optional — enables /api/stats/zenoh-bridge endpoint)
+      - LIVE_TRANSPORT_URL=${LIVE_TRANSPORT_URL:-http://live-transport:5300}
       # Container resource stats (optional — requires Docker socket mount below)
       - DOCKER_STATS_ENABLED=${DOCKER_STATS_ENABLED:-false}
       - DOCKER_STATS_CONTAINER_PREFIX=${DOCKER_STATS_CONTAINER_PREFIX:-wesense}
@@ -561,6 +965,10 @@ services:
       # - MAP_CENTER_LAT=${MAP_CENTER_LAT:--36.848}
       # - MAP_CENTER_LNG=${MAP_CENTER_LNG:-174.763}
       # - MAP_ZOOM_LEVEL=${MAP_ZOOM_LEVEL:-10}
+      # Internal TLS
+      - TLS_ENABLED=${TLS_ENABLED:-false}
+      - TLS_CA_CERTFILE=/app/certs/ca.pem
+      - NODE_EXTRA_CA_CERTS=/app/certs/ca.pem
       - TZ=${TZ:-Pacific/Auckland}
     depends_on:
       config-check:
@@ -573,18 +981,16 @@ services:
       orbitdb:
         condition: service_started
         required: false
-      kubo:
-        condition: service_healthy
-        required: false
     extra_hosts:
       - "wesense-orbitdb:host-gateway"
+      - "archive-replicator:host-gateway"
     restart: always
     networks:
       - wesense-net
 
   # ===========================================================================
   # Deployment Classifier
-  # Profiles: station
+  # Profiles: guardian
   # Analyses sensor behaviour (variance, weather correlation, temp range) to
   # classify devices as indoor/outdoor/device/mobile etc. Runs on a cron
   # schedule (default: every 12 hours). Uses Open-Meteo API for weather data.
@@ -592,7 +998,7 @@ services:
   deployment-classifier:
     image: ${CLASSIFIER_IMAGE:-ghcr.io/wesense-earth/wesense-deployment-classifier:${IMAGE_TAG:-latest}}
     container_name: wesense-deployment-classifier
-    profiles: ["station"]
+    profiles: ["guardian"]
     depends_on:
       config-check:
         condition: service_completed_successfully
@@ -601,64 +1007,30 @@ services:
     volumes:
       - ${DATA_DIR:-./data}/deployment-classifier/reports:/app/reports
       - ${DATA_DIR:-./data}/deployment-classifier/logs:/app/logs
+      - ${DATA_DIR:-./data}/deployment-classifier/data:/app/data
+      - ${DATA_DIR:-./data}/certs:/app/certs:ro
     environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
       # ClickHouse connection (includes protocol)
       - CLICKHOUSE_HOST=http://${CLICKHOUSE_HOST:-clickhouse}:${CLICKHOUSE_PORT:-8123}
       - CLICKHOUSE_USER=${CLICKHOUSE_USER:-wesense}
       - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
       - CLICKHOUSE_DATABASE=${CLICKHOUSE_DB:-wesense}
+      # Archive replicator (for P2P classification export)
+      - ARCHIVE_REPLICATOR_URL=http://archive-replicator:4400
+      # Internal TLS
+      - TLS_ENABLED=${TLS_ENABLED:-false}
+      - TLS_CA_CERTFILE=/app/certs/ca.pem
+      - NODE_EXTRA_CA_CERTS=/app/certs/ca.pem
       # Classifier settings
       - CLASSIFIER_MODE=scheduler
       - CLASSIFIER_SCHEDULE=${CLASSIFIER_SCHEDULE:-0 */12 * * *}
       - RUN_ON_STARTUP=${CLASSIFIER_RUN_ON_STARTUP:-true}
       - DRY_RUN=${CLASSIFIER_DRY_RUN:-false}
       - TZ=${TZ:-Pacific/Auckland}
-    restart: always
-    networks:
-      - wesense-net
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "5"
-
-  # ===========================================================================
-  # Kubo — IPFS Node for Archive Storage
-  # Profiles: station, guardian
-  # Dedicated go-ipfs node for storing and serving IPFS archives. Kubo's
-  # native QUIC+TCP transport and full DHT implementation provides reliable
-  # content discovery by public IPFS gateways (50-300+ DHT peers vs Helia's
-  # ~6 TCP-only peers). The archiver writes directly to Kubo via MFS API.
-  # Port 4001 (TCP+UDP/QUIC) for IPFS swarm — the standard IPFS port.
-  # API port 5001 is internal only (not published to host).
-  # ===========================================================================
-  kubo:
-    image: ipfs/kubo:latest
-    container_name: wesense-kubo
-    profiles: ["station", "guardian"]
-    depends_on:
-      config-check:
-        condition: service_completed_successfully
-    ports:
-      - "${PORT_KUBO_SWARM:-4001}:4001/tcp"
-      - "${PORT_KUBO_SWARM:-4001}:4001/udp"
-    entrypoint: ["/sbin/tini", "--", "/entrypoint-wrapper.sh"]
-    command: ["daemon", "--migrate=true", "--agent-version-suffix=docker"]
-    volumes:
-      - ${DATA_DIR:-./data}/kubo:/data/ipfs
-      - ./kubo/configure.sh:/configure-kubo.sh:ro
-      - ./kubo/init.sh:/container-init.d/001-configure.sh:ro
-      - ./kubo/entrypoint.sh:/entrypoint-wrapper.sh:ro
-    environment:
-      - PUID=${PUID:-1000}
-      - PGID=${PGID:-1000}
-      - ANNOUNCE_ADDRESS=${ANNOUNCE_ADDRESS:-}
-    healthcheck:
-      test: ["CMD", "ipfs", "id"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
+    extra_hosts:
+      - "archive-replicator:host-gateway"
     restart: always
     networks:
       - wesense-net
@@ -670,30 +1042,61 @@ services:
 
   # ===========================================================================
   # OrbitDB — Distributed Node Registry & Trust Sync
-  # Profiles: station, observer
+  # Profiles: guardian, observer
   # Helia (IPFS) + OrbitDB for automated peer discovery and trust list
-  # replication. Handles: node registry, trust sync, attestation consensus.
-  # Archive storage has moved to the dedicated Kubo service above.
+  # replication. Handles: node registry, trust sync, store scope tracking.
   # Port 4002 for libp2p peer connections (OrbitDB replication only).
   # HTTP API (5200) is internal to Docker network only.
   # ===========================================================================
   orbitdb:
     image: ${ORBITDB_IMAGE:-ghcr.io/wesense-earth/wesense-orbitdb:${IMAGE_TAG:-latest}}
     container_name: wesense-orbitdb
-    profiles: ["station", "observer", "bootstrap", "guardian"]
+    profiles: ["bootstrap", "hub", "guardian"]
     # Host networking is required for libp2p peer discovery:
     #   - LAN: mDNS multicast needs the real network interface (Docker bridge isolates it)
     #   - WAN: DHT provider records need a routable address
     # Other containers reach the HTTP API (port 5200) via extra_hosts: host-gateway.
     network_mode: host
+    deploy:
+      resources:
+        limits:
+          memory: ${ORBITDB_MEM_LIMIT:-2G}
+          cpus: ${ORBITDB_CPU_LIMIT:-2}
     volumes:
       - ${DATA_DIR:-./data}/orbitdb:/app/data
+      - ${DATA_DIR:-./data}/certs:/app/certs:ro
     environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
       - PORT=5200
       - LIBP2P_PORT=${PORT_ORBITDB_P2P:-4002}
       - DATA_DIR=/app/data
       - ANNOUNCE_ADDRESS=${ANNOUNCE_ADDRESS:-}
       - ORBITDB_BOOTSTRAP_PEERS=${ORBITDB_BOOTSTRAP_PEERS:-bootstrap.wesense.earth}
+      # Node.js heap cap. Forces v8 to GC earlier instead of letting RSS drift.
+      # Tunable per-host: low for resource-constrained nodes (256), higher for hubs (1024+).
+      # Container limit (ORBITDB_MEM_LIMIT) should sit above this to leave room for
+      # libp2p buffers, blockstore caches, and other C++ state outside the v8 heap.
+      # NOTE: only Node-level flags on the NODE_OPTIONS allowlist can be set here.
+      # V8 flags like --optimize-for-size are rejected by Node for security.
+      # NODE_OPTIONS_EXTRA allows per-host diagnostic flags (e.g. --trace-gc)
+      # without overriding the heap cap. See .env.sample Diagnostic Options.
+      - NODE_OPTIONS=--max-old-space-size=${ORBITDB_HEAP_MB:-512} ${NODE_OPTIONS_EXTRA:-}
+      # Diagnostic flags — see .env.sample Diagnostic Options.
+      - GC_PAUSE_WARN_MS=${GC_PAUSE_WARN_MS:-}
+      - TEARDOWN_TRACE=${TEARDOWN_TRACE:-}
+      # libp2p's connection-monitor is off by default — we don't consume
+      # conn.rtt, yamux keepalive handles liveness, and the upstream probe
+      # loop has two scale problems (RST cascade + outbound stream-slot leak)
+      # documented in StreamResetInvestigation.md. Set ENABLED=true to
+      # re-enable for debugging; ABORT controls the RST behaviour if enabled.
+      - CONNECTION_MONITOR_ENABLED=${CONNECTION_MONITOR_ENABLED:-false}
+      - CONNECTION_MONITOR_ABORT=${CONNECTION_MONITOR_ABORT:-false}
+      # Internal TLS
+      - TLS_ENABLED=${TLS_ENABLED:-false}
+      - TLS_CERTFILE=/app/certs/fullchain.pem
+      - TLS_KEYFILE=/app/certs/privkey.pem
+      - TLS_CA_CERTFILE=/app/certs/ca.pem
       - TZ=${TZ:-Pacific/Auckland}
     restart: always
     logging:
@@ -703,16 +1106,18 @@ services:
         max-file: "5"
 
   # ===========================================================================
-  # Zenoh Bridge — P2P Data Receiver
-  # Profiles: station, observer
-  # Subscribes to Zenoh, verifies signatures against a trust list, and writes
-  # incoming readings to the local ClickHouse. On station profile this enables
-  # receiving data from other stations; on observer it's the sole data source.
+  # Live Transport — Bidirectional MQTT ↔ Zenoh Bridge
+  # Profiles: guardian, observer
+  # Outbound: subscribes to MQTT decoded readings from all local ingesters,
+  # signs them, and publishes to the Zenoh P2P network.
+  # Inbound: subscribes to Zenoh, verifies signatures, writes to ClickHouse.
+  # This is the single point where MQTT meets Zenoh — ingesters don't need
+  # to know about Zenoh at all.
   # ===========================================================================
-  zenoh-bridge:
-    image: ${ZENOH_BRIDGE_IMAGE:-ghcr.io/wesense-earth/wesense-zenoh-bridge:${IMAGE_TAG:-latest}}
-    container_name: wesense-zenoh-bridge
-    profiles: ["station", "observer"]
+  live-transport:
+    image: ${LIVE_TRANSPORT_IMAGE:-ghcr.io/wesense-earth/wesense-live-transport:${IMAGE_TAG:-latest}}
+    container_name: wesense-live-transport
+    profiles: ["guardian"]
     depends_on:
       config-check:
         condition: service_completed_successfully
@@ -728,18 +1133,29 @@ services:
       - "wesense-orbitdb:host-gateway"
       - "zenohd:host-gateway"
     volumes:
-      - ${DATA_DIR:-./data}/zenoh-bridge/data:/app/data
-      - ${DATA_DIR:-./data}/zenoh-bridge/logs:/app/logs
+      - ${DATA_DIR:-./data}/live-transport/data:/app/data
+      - ${DATA_DIR:-./data}/live-transport/logs:/app/logs
       # Local ingester keys (read-only) — used for self-echo filtering
       - ${DATA_DIR:-./data}/ingester-wesense/keys:/app/local-keys/wesense:ro
       - ${DATA_DIR:-./data}/ingester-meshtastic/keys:/app/local-keys/meshtastic:ro
       - ${DATA_DIR:-./data}/ingester-meshtastic-downlink/keys:/app/local-keys/meshtastic-downlink:ro
+      - ${DATA_DIR:-./data}/certs:/app/certs:ro
     environment:
-      # Zenoh connection (client mode — station: local zenohd, observer: remote router)
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      # Zenoh connection (client mode — guardian: local zenohd, observer: remote router)
       - ZENOH_ENABLED=true
       - ZENOH_MODE=${ZENOH_MODE:-client}
       - ZENOH_ROUTERS=${ZENOH_ROUTERS:-tcp/zenohd:7447}
       - ZENOH_SUBSCRIBE_KEY=${ZENOH_SUBSCRIBE_KEY:-wesense/v2/live/**}
+      - ZENOH_KEY_DIR=/app/data/keys
+      # MQTT outbound bridge (subscribe to decoded readings, forward to Zenoh)
+      - MQTT_BRIDGE_ENABLED=${MQTT_BRIDGE_ENABLED:-true}
+      - MQTT_BROKER=${MQTT_HOST:-emqx}
+      - MQTT_PORT=${MQTT_PORT:-1883}
+      - MQTT_USERNAME=${MQTT_USER}
+      - MQTT_PASSWORD=${MQTT_PASSWORD}
+      - MQTT_SUBSCRIBE_TOPIC=${MQTT_SUBSCRIBE_TOPIC:-wesense/decoded/#}
       # ClickHouse connection (local database)
       - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-clickhouse}
       - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
@@ -754,8 +1170,19 @@ services:
       - ORBITDB_ENABLED=${ORBITDB_ENABLED:-true}
       - ORBITDB_URL=${ORBITDB_URL:-http://wesense-orbitdb:5200}
       - ORBITDB_SYNC_INTERVAL=${ORBITDB_SYNC_INTERVAL:-3600}
+      # WAN peer discovery (registers zenoh_endpoint in OrbitDB for remote bridges)
+      - ANNOUNCE_ADDRESS=${ANNOUNCE_ADDRESS:-}
+      - WESENSE_PROXY=${WESENSE_PROXY:-}
+      - PORT_ZENOH=${PORT_ZENOH:-7447}
+      # Stats API
+      - BRIDGE_API_PORT=${LIVE_TRANSPORT_API_PORT:-5300}
       # Logging
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # Internal TLS
+      - TLS_ENABLED=${TLS_ENABLED:-false}
+      - TLS_CERTFILE=/app/certs/fullchain.pem
+      - TLS_KEYFILE=/app/certs/privkey.pem
+      - TLS_CA_CERTFILE=/app/certs/ca.pem
       - TZ=${TZ:-Pacific/Auckland}
     restart: always
     networks:
@@ -768,14 +1195,14 @@ services:
 
   # ===========================================================================
   # Zenoh API — HTTP Frontend for Distributed Queries
-  # Profiles: station, observer
+  # Profiles: guardian, observer
   # Translates REST requests into Zenoh distributed queries.
   # Respiro calls these endpoints to show P2P data.
   # ===========================================================================
   zenoh-api:
     image: ${ZENOH_API_IMAGE:-ghcr.io/wesense-earth/wesense-zenoh-api:${IMAGE_TAG:-latest}}
     container_name: wesense-zenoh-api
-    profiles: ["station", "observer"]
+    profiles: ["guardian"]
     depends_on:
       config-check:
         condition: service_completed_successfully
@@ -785,6 +1212,8 @@ services:
     extra_hosts:
       - "zenohd:host-gateway"
     environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
       # Zenoh connection
       - ZENOH_ENABLED=true
       - ZENOH_MODE=${ZENOH_MODE:-client}
@@ -795,74 +1224,13 @@ services:
       - FLASK_PORT=5100
       # Logging
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # Internal TLS
+      - TLS_ENABLED=${TLS_ENABLED:-false}
+      - TLS_CA_CERTFILE=/app/certs/ca.pem
       - TZ=${TZ:-Pacific/Auckland}
-    restart: always
-    networks:
-      - wesense-net
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "5"
-
-  # ===========================================================================
-  # WeSense Archiver — IPFS Archive Service
-  # Profiles: station, guardian
-  # Queries ClickHouse for signed readings, verifies signatures, exports
-  # Parquet archives with trust snapshots and signed manifests, uploads to
-  # IPFS via Kubo MFS API, and submits attestations to OrbitDB for
-  # multi-archiver consensus. Runs on a configurable daily schedule.
-  # ===========================================================================
-  archiver:
-    image: ${ARCHIVER_IMAGE:-ghcr.io/wesense-earth/wesense-archiver:${IMAGE_TAG:-latest}}
-    container_name: wesense-archiver
-    profiles: ["station", "guardian"]
-    depends_on:
-      config-check:
-        condition: service_completed_successfully
-      clickhouse:
-        condition: service_healthy
-      kubo:
-        condition: service_healthy
-        required: false
-      orbitdb:
-        condition: service_started
-        required: false
-    extra_hosts:
-      - "wesense-orbitdb:host-gateway"
     volumes:
-      - ${DATA_DIR:-./data}/archiver/keys:/app/data/keys
-      - ${DATA_DIR:-./data}/archiver/staging:/app/data/staging
-    environment:
-      # ClickHouse connection
-      - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-clickhouse}
-      - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
-      - CLICKHOUSE_DATABASE=${CLICKHOUSE_DB:-wesense}
-      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-wesense}
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
-      # Archiver signing key
-      - ZENOH_KEY_DIR=/app/data/keys
-      # Trust store (synced from OrbitDB on startup)
-      - TRUST_FILE=/app/data/trust_list.json
-      # Kubo IPFS node (archive storage via MFS API)
-      # ARCHIVER_KUBO_API_URL overrides KUBO_API_URL for the archiver only,
-      # allowing secondary LAN stations to upload archives through an upstream node.
-      - KUBO_API_URL=${ARCHIVER_KUBO_API_URL:-${KUBO_API_URL:-http://kubo:5001}}
-      # OrbitDB — attestation submission (may point to remote primary hub)
-      - ORBITDB_URL=${ARCHIVER_ORBITDB_URL:-${ORBITDB_URL:-http://wesense-orbitdb:5200}}
-      # OrbitDB — trust sync (always local; replicates via libp2p peer sync)
-      - ORBITDB_TRUST_URL=${ORBITDB_URL:-http://wesense-orbitdb:5200}
-      # Staging directory (local to archiver container)
-      - ARCHIVE_STAGING_DIR=/app/data/staging
-      # Schedule — hours between archive cycles (gap-aware, safe to repeat)
-      - ARCHIVE_INTERVAL_HOURS=${ARCHIVE_INTERVAL_HOURS:-4}
-      # Earliest date to archive (empty = use earliest ClickHouse data)
-      - ARCHIVE_START_DATE=${ARCHIVE_START_DATE:-}
-      # Regions — comma-separated country codes, empty = all
-      - ARCHIVE_REGIONS=${ARCHIVE_REGIONS:-}
-      # Logging
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - TZ=${TZ:-Pacific/Auckland}
+      - ${DATA_DIR:-./data}/zenoh-api/logs:/app/logs
+      - ${DATA_DIR:-./data}/certs:/app/certs:ro
     restart: always
     networks:
       - wesense-net

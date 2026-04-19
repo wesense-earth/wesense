@@ -36,21 +36,26 @@ CREATE TABLE IF NOT EXISTS wesense.sensor_readings
     `geo_h3_res8` UInt64 DEFAULT 0,
     `sensor_model` LowCardinality(String) DEFAULT '',
     `board_model` LowCardinality(String) DEFAULT '',
-    `calibration_status` LowCardinality(String) DEFAULT 'unknown',
+    `calibration_status` LowCardinality(String) DEFAULT '',
     `data_quality_flag` LowCardinality(String) DEFAULT 'unvalidated',
-    `deployment_type` LowCardinality(String) DEFAULT 'unknown',
-    `transport_type` LowCardinality(String) DEFAULT 'unknown',
-    `location_source` LowCardinality(String) DEFAULT 'unknown',
+    `deployment_type` LowCardinality(String) DEFAULT '',
+    `transport_type` LowCardinality(String) DEFAULT '',
+    `location_source` LowCardinality(String) DEFAULT '',
     `firmware_version` Nullable(String),
     `deployment_location` Nullable(String),
     `node_name` Nullable(String),
-    `deployment_type_source` LowCardinality(String) DEFAULT 'unknown',
+    `deployment_type_source` LowCardinality(String) DEFAULT '',
     `node_info` Nullable(String),
     `node_info_url` Nullable(String),
     `signature` String DEFAULT '' COMMENT 'Ed25519 signature (hex)',
     `ingester_id` LowCardinality(String) DEFAULT '' COMMENT 'Signing ingester ID (wsi_xxxxxxxx)',
     `key_version` UInt32 DEFAULT 0 COMMENT 'Signing key version',
-    `received_via` LowCardinality(String) DEFAULT 'local' COMMENT 'How this station received the reading: local or p2p'
+    `received_via` LowCardinality(String) DEFAULT 'local' COMMENT 'How this station received the reading: local or p2p',
+    `data_source_name` LowCardinality(String) DEFAULT '',
+    `data_license` LowCardinality(String) DEFAULT 'CC-BY-4.0' COMMENT 'Data license for this reading (default CC-BY-4.0 for WeSense-originated data)',
+    `reading_type_name` LowCardinality(String) DEFAULT '' COMMENT 'Human-readable display name (e.g. PM2.5 for pm2_5)',
+    `signing_payload_version` UInt16 DEFAULT 1 COMMENT 'Which version of the canonical schema was used to build the signed payload',
+    `public_key` LowCardinality(String) DEFAULT '' COMMENT 'Ed25519 public key (base64) used for signing — stored per row so archives are self-contained'
 )
 ENGINE = ReplacingMergeTree(timestamp)
 PARTITION BY toYYYYMM(timestamp)
@@ -100,3 +105,19 @@ CREATE TABLE IF NOT EXISTS wesense_respiro.device_region_cache
 ENGINE = ReplacingMergeTree(updated_at)
 ORDER BY device_id
 SETTINGS index_granularity = 8192;
+
+-- =============================================================================
+-- Schema migration tracking
+-- =============================================================================
+
+-- Tracks which numbered migrations have been applied.
+-- migrate.sh creates this table on existing deployments; this CREATE
+-- ensures fresh installs also have it from the start.
+CREATE TABLE IF NOT EXISTS wesense.schema_migrations
+(
+    `version` String,
+    `name` String,
+    `applied_at` DateTime DEFAULT now()
+)
+ENGINE = ReplacingMergeTree()
+ORDER BY version;

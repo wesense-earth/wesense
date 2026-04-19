@@ -118,4 +118,4 @@ If you're upgrading from an older version that used `CLICKHOUSE_USER=default` fo
 
 ## License
 
-MIT License
+AGPL-3.0 License

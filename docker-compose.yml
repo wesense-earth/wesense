@@ -329,7 +329,7 @@ services:
   # Contributors connect to a remote router instead.
   # ===========================================================================
   zenohd:
-    image: eclipse/zenoh:1.7.2
+    image: eclipse/zenoh:1.10.1
     container_name: wesense-zenohd
     profiles: ["guardian"]
     depends_on:

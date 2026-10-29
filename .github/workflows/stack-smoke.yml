@@ -1,0 +1,122 @@
+name: Stack smoke test
+
+# Checks that the compose file is valid for every deployment profile, and that
+# the full guardian stack, using the published :latest images, comes up healthy
+# and stays up. The daily run catches a service update (for example an
+# auto-merged Dependabot fix) that breaks the combination.
+# Details: https://docs.wesense.earth/developers/dependency-updates
+
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    # Daily, a few hours after the weekly image rebuilds on Sunday and after
+    # any merged fix has been published.
+    - cron: '30 15 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Compose file is valid for every profile combination ─────────────
+  compose-config:
+    name: compose-config
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        profiles:
+          - guardian
+          - guardian,meshtastic,wesense,homeassistant,govaq-nz,govaq-au,tls
+          - guardian,meshtastic-downlink
+          - contributor
+          - hub
+          - bootstrap
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create a CI .env
+        run: |
+          cp .env.sample .env
+          sed -i 's/=CHANGEME/=ci-only-password/' .env
+          sed -i "s/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=${{ matrix.profiles }}/" .env
+          sed -i "s/^MQTT_PASSWORD=.*/MQTT_PASSWORD=ci-only-password/" .env
+
+      - name: Validate the compose file
+        run: docker compose config --quiet
+
+  # ── The full stack comes up healthy and stays up ────────────────────
+  stack-up:
+    name: stack-up
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create a CI .env
+        run: |
+          cp .env.sample .env
+          sed -i 's/=CHANGEME/=ci-only-password/' .env
+          sed -i "s/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=guardian/" .env
+          sed -i "s/^MQTT_PASSWORD=.*/MQTT_PASSWORD=ci-only-password/" .env
+          sed -i "s|^DATA_DIR=.*|DATA_DIR=$PWD/data|" .env
+          sed -i "s/^PUID=.*/PUID=$(id -u)/; s/^PGID=.*/PGID=$(id -g)/" .env
+          # Don't depend on the public bootstrap peers from CI.
+          sed -i "s/^ORBITDB_BOOTSTRAP_PEERS=.*/ORBITDB_BOOTSTRAP_PEERS=/" .env
+          mkdir -p data
+
+      - name: Pull the published images
+        run: docker compose pull --quiet
+
+      - name: Start the stack
+        run: docker compose up -d
+
+      - name: Wait for every service to be healthy
+        run: |
+          deadline=$((SECONDS + 600))
+          while [ $SECONDS -lt $deadline ]; do
+            bad=""; waiting=""
+            for id in $(docker compose ps -a -q); do
+              name=$(docker inspect -f '{{.Name}}' "$id" | sed 's|^/||')
+              state=$(docker inspect -f '{{.State.Status}}' "$id")
+              health=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$id")
+              code=$(docker inspect -f '{{.State.ExitCode}}' "$id")
+              case "$state:$health" in
+                running:healthy|running:none) ;;
+                running:starting) waiting="$waiting $name";;
+                exited:*) [ "$code" = "0" ] || bad="$bad $name(exit $code)";;
+                *) bad="$bad $name($state/$health)";;
+              esac
+            done
+            [ -n "$bad" ] && { echo "Unhealthy:$bad"; exit 1; }
+            [ -z "$waiting" ] && { echo "All services healthy."; exit 0; }
+            echo "Waiting for:$waiting"; sleep 10
+          done
+          echo "Timed out waiting for:$waiting"; exit 1
+
+      - name: Stay up for a minute (no restart loops)
+        run: |
+          sleep 60
+          fail=0
+          for id in $(docker compose ps -q); do
+            name=$(docker inspect -f '{{.Name}}' "$id")
+            restarts=$(docker inspect -f '{{.RestartCount}}' "$id")
+            state=$(docker inspect -f '{{.State.Status}}' "$id")
+            echo "$name state=$state restarts=$restarts"
+            if [ "$restarts" != "0" ] || [ "$state" != "running" ]; then fail=1; fi
+          done
+          exit $fail
+
+      - name: Map responds
+        run: curl -fsS --retry 10 --retry-delay 3 --retry-connrefused -o /dev/null -w "respiro HTTP %{http_code}\n" http://localhost:3001/
+
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          docker compose ps -a
+          docker compose logs --tail=60
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

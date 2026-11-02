@@ -5,7 +5,7 @@
 # Flask app that translates REST requests into Zenoh distributed queries.
 # Returns aggregated JSON from all responding stations/ingesters.
 
-FROM python:3.11-slim
+FROM python:3.14-slim
 
 WORKDIR /app
 

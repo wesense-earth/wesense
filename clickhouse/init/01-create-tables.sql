@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS wesense.sensor_readings
     `value_max` Float64 DEFAULT 0,
     `latitude` Float64,
     `longitude` Float64,
-    `altitude` Nullable(Float32),
+    `altitude` Nullable(Float64),
     `geo_country` LowCardinality(String),
     `geo_subdivision` LowCardinality(String) DEFAULT '',
     `geo_h3_res8` UInt64 DEFAULT 0,

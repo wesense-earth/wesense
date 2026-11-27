@@ -63,7 +63,8 @@ else
         -key "$CERT_DIR/ca-key.pem" \
         -out "$CERT_DIR/ca.pem" \
         -days "$CA_DAYS" \
-        -subj "/O=WeSense/CN=WeSense Deployment CA"
+        -subj "/O=WeSense/CN=WeSense Deployment CA" \
+        -addext "keyUsage=critical,keyCertSign,cRLSign"
 
     echo "CA certificate: $CERT_DIR/ca.pem"
     echo "CA private key: $CERT_DIR/ca-key.pem (keep this secure!)"
@@ -80,7 +81,9 @@ openssl req -new \
     -key "$CERT_DIR/privkey.pem" \
     -out "$CERT_DIR/service.csr" \
     -subj "/O=WeSense/CN=wesense-services" \
-    -addext "subjectAltName=${SANS}"
+    -addext "subjectAltName=${SANS}" \
+    -addext "keyUsage=critical,digitalSignature,keyEncipherment" \
+    -addext "extendedKeyUsage=serverAuth,clientAuth"
 
 # Sign with CA
 openssl x509 -req \

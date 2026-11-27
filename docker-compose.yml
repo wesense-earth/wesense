@@ -94,7 +94,7 @@ services:
   # docker-compose.override.yml.sample to docker-compose.override.yml.
   # ===========================================================================
   emqx:
-    image: emqx/emqx:5.8.9
+    image: emqx/emqx:6.3.2
     container_name: wesense-emqx
     profiles: ["hub", "guardian"]
     user: "0:0"

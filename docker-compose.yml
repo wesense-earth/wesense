@@ -194,13 +194,28 @@ services:
         generate_ca() {
           echo "Generating new CA (valid 10 years)..."
           openssl genrsa -out /certs/ca-key.pem 4096
-          openssl req -new -x509 -key /certs/ca-key.pem -out /certs/ca.pem -days 3650 -subj "/O=WeSense/CN=WeSense Deployment CA"
+          openssl req -new -x509 -key /certs/ca-key.pem -out /certs/ca.pem -days 3650 -subj "/O=WeSense/CN=WeSense Deployment CA" -addext "keyUsage=critical,keyCertSign,cRLSign"
+        }
+
+        # CAs made before 2026-11 lack the key usage extension, which Python 3.13+
+        # rejects. Re-issue the CA certificate from the same key and name: service
+        # certs and devices flashed with the old ca.pem keep working.
+        upgrade_ca() {
+          if openssl x509 -in /certs/ca.pem -noout -ext keyUsage 2>/dev/null | grep -q "Certificate Sign"; then
+            return 0
+          fi
+          echo "CA certificate has no key usage extension (Python 3.13+ rejects it). Re-issuing it from the same key and name; devices holding the old ca.pem keep working."
+          SUBJ=$$(openssl x509 -in /certs/ca.pem -noout -subject -nameopt compat | sed 's/^subject=//')
+          cp -p /certs/ca.pem /certs/ca-without-key-usage.pem
+          openssl req -new -x509 -key /certs/ca-key.pem -out /certs/ca.pem.new -days 3650 -subj "$$SUBJ" -addext "keyUsage=critical,keyCertSign,cRLSign"
+          mv /certs/ca.pem.new /certs/ca.pem
+          if [ -f /certs/cert.pem ]; then cat /certs/cert.pem /certs/ca.pem > /certs/fullchain.pem; fi
         }
 
         generate_service_cert() {
           echo "Generating service certificate (valid 10 years)..."
           openssl genrsa -out /certs/privkey.pem 2048
-          openssl req -new -key /certs/privkey.pem -out /tmp/service.csr -subj "/O=WeSense/CN=wesense-services" -addext "subjectAltName=$$SANS"
+          openssl req -new -key /certs/privkey.pem -out /tmp/service.csr -subj "/O=WeSense/CN=wesense-services" -addext "subjectAltName=$$SANS" -addext "keyUsage=critical,digitalSignature,keyEncipherment" -addext "extendedKeyUsage=serverAuth,clientAuth"
           openssl x509 -req -in /tmp/service.csr -CA /certs/ca.pem -CAkey /certs/ca-key.pem -CAcreateserial -out /certs/cert.pem -days $$CERT_DAYS -copy_extensions copy
           cat /certs/cert.pem /certs/ca.pem > /certs/fullchain.pem
           rm -f /tmp/service.csr /certs/ca.srl
@@ -231,6 +246,7 @@ services:
         if [ ! -f /certs/ca.pem ] || [ ! -f /certs/ca-key.pem ]; then
           generate_ca
         fi
+        upgrade_ca
 
         if cert_needs_renewal; then
           generate_service_cert
